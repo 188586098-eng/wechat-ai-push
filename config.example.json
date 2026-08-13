@@ -1,0 +1,61 @@
+{
+  "pushplusToken": "你的pushplus_token",
+  "pushLimitPerRun": 10,
+  "sources": {
+    "qbitai": {
+      "enabled": true,
+      "name": "量子位",
+      "url": "https://www.qbitai.com/"
+    },
+    "zhidx": {
+      "enabled": true,
+      "name": "智东西",
+      "url": "https://www.zhidx.com/"
+    },
+    "aiera": {
+      "enabled": true,
+      "name": "新智元",
+      "url": "https://aiera.com.cn/"
+    },
+    "kr36": {
+      "enabled": true,
+      "name": "36氪",
+      "url": "https://gateway.36kr.com/api/mis/nav/home/nav/rank/hot"
+    },
+    "infoq": {
+      "enabled": true,
+      "name": "InfoQ",
+      "url": "https://www.infoq.cn/"
+    },
+    "netease": {
+      "enabled": true,
+      "name": "刘润",
+      "url": "https://m.163.com/news/sub/T1466412414497.html"
+    },
+    "panews": {
+      "enabled": true,
+      "name": "数字生命卡兹克",
+      "url": "https://www.panewslab.com/zh-hant/columns/019e8dd4-8e70-708c-aaa5-1e9a821cf304"
+    },
+    "trending": {
+      "enabled": true,
+      "name": "GitHub热门",
+      "url": "https://github.com/trending?since=daily&spoken_language_code=zh"
+    },
+    "geekpark": {
+      "enabled": true,
+      "name": "极客公园",
+      "url": "https://wechat2rss.xlab.app/feed/1a5aec98e71c707c8ca092bc2c255b9d4bac477d.xml"
+    },
+    "jiqizhixin": {
+      "enabled": true,
+      "name": "机器之心",
+      "url": "http://localhost:4000/feeds/MP_WXS_3073282833.rss"
+    },
+    "huxiu": {
+      "enabled": true,
+      "name": "虎嗅",
+      "url": "http://localhost:4000/feeds/MP_WXS_1432156401.rss"
+    }
+  }
+}

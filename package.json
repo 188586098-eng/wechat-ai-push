@@ -1,0 +1,13 @@
+{
+  "name": "wechat-ai-push",
+  "version": "1.0.0",
+  "description": "聚合 AI 头部自媒体最新文章并通过 pushplus 推送到微信",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
