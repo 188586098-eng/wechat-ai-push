@@ -56,3 +56,14 @@ Entries discovered by the Agent during task execution should follow this format:
   - 已订阅公众号：机器之心 MP_WXS_3073282833、虎嗅APP MP_WXS_1432156401；登录账号「扬帆起航的墙」id=431803268。
   - 极客公园经免费公众号 RSS 服务 wechat2rss（wechat2rss.xlab.app）获取，feed 地址含 hash，OPML 列表在 /opml/sec.opml；wechat2rss 的 RSS 用纯文本 title，wewe-rss 的 RSS 用 CDATA 包裹 title，parseRss 必须先在 cleanTitle 剥离 CDATA（/<!\[CDATA\[([\s\S]*?)\]\]>/g），否则整段被当标签删除导致 0 条。
   - 主推送服务选文逻辑：fresh 数组按源顺序排列时，前几个源会占满 pushLimitPerRun 名额导致后续源永不入选；应改为按源轮询（每源每轮取一篇，每源上限 perSourceLimit，总数上限 pushLimitPerRun）以均衡覆盖全部源。
+
+[Project Knowledge Summary]
+- Date: 2026-08-13
+- Context: Discovered by Agent while auditing security of the WeChat push service, wewe-rss deployment, and GitHub push
+- Category: Environment Configuration & Security
+- Instructions:
+  - 敏感文件权限须加固为 600：/workspace/config.json（pushplus token）、/workspace/data/sent.json 与 lastrun.json、/tmp/opencode/wewe-rss/apps/server/data/wewe-rss.db（含微信读书 token）。这些文件已 gitignore 不入库。
+  - GitHub push 时若 token 直接拼进 git remote URL（https://x-access-token:TOKEN@...），会明文存于 .git/config，push 后须立即 git remote set-url 恢复为 https://github.com/用户/仓库.git，避免 token 长期残留。
+  - wewe-rss 安全边界：所有 /trpc/* 接口（含 account.add、feed.add 等）受 AUTH_CODE 保护，公网无鉴权调用返回 401；但 /feeds/* 的 RSS 输出为公开无鉴权（官方默认行为），只含文章标题+链接，不含微信读书 token，无隐私泄露。
+  - 扫码登录独立服务（/tmp/opencode/qrlogin，4500 端口）只能创建登录二维码与轮询状态，无法读取已有账号数据，登录完成后应停止该服务缩小攻击面。
+  - 环境内 GitHub 凭据需用用户提供的 Personal Access Token；gh auth login 需要 read:org scope（classic token 只勾 repo 会报 missing scope），git 直连 https://api.github.com 配 Authorization: token 头可用。仓库创建：POST /user/repos 传 {name, private, description}。
