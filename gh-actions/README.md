@@ -1,17 +1,20 @@
 # AI 资讯日报 GitHub Actions 部署指南
 
-本项目通过 GitHub Actions 定时任务，每天北京时间 8:00 自动抓取 AI 资讯、生成 LLM 摘要，并通过 pushplus 推送到你的微信。运行在 GitHub 云端，不依赖本地电脑或 devbox。
+本项目通过 GitHub Actions 定时任务，每天北京时间 7:00 自动抓取 AI 资讯、生成 LLM 摘要，并通过 pushplus 推送到你的微信。运行在 GitHub 云端，不依赖本地电脑或 devbox。
 
 ## 目录结构
 
 ```
 ├── .github/workflows/ai-news.yml   # 定时任务定义
 ├── gh-actions/
-│   ├── index.js                    # 主脚本：抓取 → 选文 → LLM 摘要 → 推送 → 输出日报
+│   ├── index.js                    # 主脚本：健康检测 → 抓取 → 选文 → LLM 摘要 → 推送
+│   ├── health.js                   # 公众号 token 健康检测（失效自动降级）
 │   ├── fetch.js                    # HTTP 抓取（带重试）
 │   ├── sources.js                  # 各源解析器
 │   ├── llm.js                      # DeepSeek 摘要生成
-│   └── push.js                     # pushplus HTML 组装
+│   ├── push.js                     # pushplus HTML 组装
+│   └── wechat.js                   # 公众号平台 API 源
+├── sync-secret.sh                  # 本机一键同步 WEWE_TOKEN 到 GitHub Secret
 └── .gitignore                      # 忽略 token 配置与输出
 ```
 
@@ -43,7 +46,14 @@
 | Datawhale | MP_WXS_3226363426 |
 | 腾讯云开发者 | MP_WXS_3264589119 |
 
-> 说明：GitHub Actions 运行在隔离环境，无法访问本地 wewe-rss 服务，因此直接调用微信读书平台 API 获取公众号文章，无需部署 wewe-rss。token 失效时需重新扫码并把新 token 更新到 Secrets。
+> 说明：GitHub Actions 运行在隔离环境，无法访问本地 wewe-rss 服务，因此直接调用微信读书平台 API 获取公众号文章，无需部署 wewe-rss。
+
+### 登录失效自动处理
+
+每次运行先做 token 健康检测（`health.js`）：
+
+- **token 有效**：正常抓取公众号 + 官网源，推送完整日报
+- **token 失效（401）**：自动降级为纯官网源日报（日报不断更），同时 pushplus 单独推送一条「微信读书登录已失效」提醒，指导你完成续期
 
 ## 部署步骤
 
@@ -68,15 +78,20 @@
 | `WEWE_XID` | 微信读书账号 id，默认 `431803268` | 否 |
 | `PLATFORM_URL` | 可选，默认 `https://weread.111965.xyz` | 否 |
 
-### 获取 WEWE_TOKEN
+### 获取 WEWE_TOKEN / 失效续期
 
-本地运行 wewe-rss 的环境执行：
+收到「微信读书登录已失效」提醒时，本机执行：
+
+1. 打开 `http://localhost:4500` 用微信读书 App 扫码（新 token 自动写入本地 wewe-rss 数据库）
+2. 运行一键同步脚本（把新 token 更新到 GitHub Secret）：
 
 ```bash
-sqlite3 apps/server/data/wewe-rss.db "SELECT token FROM accounts"
+cd /workspace && ./sync-secret.sh
 ```
 
-将输出的完整 token 填入 Secrets。token 失效时（推送中公众号源返回 0 篇），重新扫码获取新 token 并更新 Secrets。
+3. 仓库 Actions 页手动 Run workflow，公众号源即恢复。
+
+脚本依赖 `gh` CLI（已登录或设置 `GH_TOKEN` 环境变量），从本地库读取 token 后直接更新 `WEWE_TOKEN` Secret，token 不会写入任何文件。
 
 ### 3. 上传代码
 
@@ -105,7 +120,7 @@ git push -u origin main
 
 ## 运行说明
 
-- **自动执行**：每天早上 8:00（北京时间，cron 为 UTC 0:00），GitHub 定时任务最长延迟约 15 分钟属正常
+- **自动执行**：每天早上 7:00（北京时间，cron 为 UTC 23:00），GitHub 定时任务最长延迟约 15 分钟属正常
 - **重跑某天**：进 Actions 手动 Run workflow 即可
 - **查看原文**：下载 artifact 里的 md 文件
 - **去重**：脚本将已推送文章 URL 存入 `gh-actions/data/sent.json`，通过 actions/cache 跨运行保留，避免重复推送
