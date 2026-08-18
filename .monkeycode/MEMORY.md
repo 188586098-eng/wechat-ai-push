@@ -79,3 +79,16 @@ Entries discovered by the Agent during task execution should follow this format:
   - wewe-rss 安全边界：所有 /trpc/* 接口（含 account.add、feed.add 等）受 AUTH_CODE 保护，公网无鉴权调用返回 401；但 /feeds/* 的 RSS 输出为公开无鉴权（官方默认行为），只含文章标题+链接，不含微信读书 token，无隐私泄露。
   - 扫码登录独立服务（/tmp/opencode/qrlogin，4500 端口）只能创建登录二维码与轮询状态，无法读取已有账号数据，登录完成后应停止该服务缩小攻击面。
   - 环境内 GitHub 凭据需用用户提供的 Personal Access Token；gh auth login 需要 read:org scope（classic token 只勾 repo 会报 missing scope），git 直连 https://api.github.com 配 Authorization: token 头可用。仓库创建：POST /user/repos 传 {name, private, description}。
+
+[Project Knowledge Summary]
+- Date: 2026-08-18
+- Context: Discovered by Agent while implementing cloud (GitHub Actions) scheduled push and local token maintenance workflow
+- Category: Operations & Deployment
+- Instructions:
+  - 云端方案（GitHub Actions）：/workspace/.github/workflows/ai-news.yml 每天北京时间 7:00（cron '0 23 * * *' 即 UTC 23:00）自动运行，workflow_dispatch 可手动触发。运行逻辑在 /workspace/gh-actions/（index.js/fetch.js/sources.js/llm.js/push.js/wechat.js/health.js），直接调微信读书平台 API（weread.111965.xyz/api/v2/platform/mps/{mpId}/articles）抓 8 个公众号，不跑 wewe-rss。
+  - 关键：GitHub Actions 内无法扫码续期——runner 无法运行 wewe-rss、平台 API 不暴露 tRPC 登录端点（/trpc/* 全部 404）、GitHub Secrets 只读无法写回。因此 token 失效只能本机扫码后手动同步。
+  - 健康检测与降级：gh-actions/health.js 每次运行先探测 token（401=失效）。失效时自动降级为纯官网源日报（推送不断更），并 pushplus 推送「微信读书登录已失效」提醒含续期指引；有效时输出 [健康] 公众号 token 有效。health.js 的 PLATFORM_URL/WEWE_TOKEN/WEWE_XID 在函数内读取 process.env（模块加载时读取会导致测试时设置 env 无效）。
+  - 本机一键同步：/workspace/sync-secret.sh 从本地 wewe-rss 库（/tmp/opencode/wewe-rss/apps/server/data/wewe-rss.db 的 accounts 表，账号 id=431803268）读取 token，用 gh secret set WEWE_TOKEN --repo 188586098-eng/wechat-ai-push 更新到 GitHub Secret。依赖 gh CLI（需 GH_TOKEN 环境变量或已 gh auth login），token 不落盘。
+  - 已配置的 GitHub Secrets：PUSHPLUS_TOKEN、USER_LLM_API_KEY、WEWE_TOKEN（3 个必填）；USER_LLM_BASE_URL/USER_LLM_MODEL/WEWE_XID/PLATFORM_URL 因代码有默认值未配置。
+  - 本机 token 维护（云端关闭也自给自足）：本地 wewe-rss（localhost:4000）+ qrlogin（localhost:4500，/tmp/opencode/qrlogin/server.js）+ scheduler（/workspace，PID 由 background terminal 管理）持续运行。全自动方式：scheduler 推送前 auth.ensureLogin 检测失效→推送二维码到微信→用户扫码→自动写库刷新。手动方式：打开 localhost:4500 扫码，但 qrlogin 扫码后 token 只存内存不自动写库，需再调 tRPC account.edit（POST /trpc/account.edit?batch=1 body {"0":{"id":"431803268","data":{"token":"<新token>","status":1}}}）回写数据库。
+  - 公众号 token 是微信读书 Bearer token，无固定有效期会过期；本地库 token 更新与 GitHub Secret 是"复制"关系不同步，本机自动续期换新 token 后必须跑 sync-secret.sh 云端才生效。
