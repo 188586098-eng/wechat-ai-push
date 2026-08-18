@@ -4,7 +4,7 @@ const { getHtml } = require('./fetch');
 const { parseQbitai, parseZhidx, parseAiera, parse36kr, parseInfoq, parseNetEase } = require('./sources');
 const { buildHtml } = require('./push');
 const { summarize, isLlmEnabled } = require('./llm');
-const { fetchAllMpArticles, isPlatformEnabled } = require('./wechat');
+const { fetchAllMpArticles, isPlatformEnabled, checkPlatformToken } = require('./wechat');
 
 const PUSHPLUS_TOKEN = process.env.PUSHPLUS_TOKEN;
 if (!PUSHPLUS_TOKEN) {
@@ -67,12 +67,14 @@ async function fetchWebSources(seen) {
   return { fresh, failures };
 }
 
-async function fetchAll() {
+async function fetchAll({ skipMp = false } = {}) {
   const seen = new Set(loadSent());
   const web = await fetchWebSources(seen);
 
   let mp = [];
-  if (isPlatformEnabled()) {
+  if (skipMp) {
+    console.log('[抓取] 公众号 token 已失效，本次跳过公众号源');
+  } else if (isPlatformEnabled()) {
     try {
       mp = await fetchAllMpArticles(seen);
     } catch (e) {
@@ -130,8 +132,43 @@ function toMarkdown(items, summary) {
   return lines.join('\n');
 }
 
+async function notifyTokenExpired(reason) {
+  const html = `<div style="font-size:15px;line-height:1.8;text-align:center">
+<h3>微信读书登录已失效</h3>
+<p style="color:#888">原因：${reason}</p>
+<p>公众号源已临时降级为官网源，日报继续推送</p>
+<p>请在本机完成续期（约 1 分钟）：</p>
+<p><code>1. 打开 http://localhost:4500 微信扫码</code></p>
+<p><code>2. 运行 ./sync-secret.sh 同步 token</code></p>
+<p><code>3. 手动 Run workflow 恢复公众号源</code></p>
+</div>`;
+  const res = await fetch('https://www.pushplus.plus/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: PUSHPLUS_TOKEN, title: '公众号登录失效，请续期', content: html, template: 'html' }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const json = await res.json();
+  if (json.code !== 200) throw new Error(`pushplus error: ${JSON.stringify(json)}`);
+  console.log(`[提醒] 失效提醒已推送: ${JSON.stringify(json)}`);
+}
+
 async function main() {
-  const { fresh, failures } = await fetchAll();
+  const health = await checkPlatformToken();
+  let skipMp = false;
+  if (health.expired) {
+    skipMp = true;
+    console.log(`[健康] 公众号 token 已失效: ${health.reason}`);
+    try {
+      await notifyTokenExpired(health.reason);
+    } catch (e) {
+      console.log(`[提醒] 失效提醒发送失败: ${e.message}`);
+    }
+  } else {
+    console.log('[健康] 公众号 token 有效');
+  }
+
+  const { fresh, failures } = await fetchAll({ skipMp });
 
   if (!fresh.length) {
     console.log('本次无新文章，跳过推送。');

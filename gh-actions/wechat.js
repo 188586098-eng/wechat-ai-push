@@ -1,3 +1,5 @@
+const { checkPlatformToken } = require('./health');
+
 const PLATFORM_URL = process.env.PLATFORM_URL || 'https://weread.111965.xyz';
 const WEWE_TOKEN = process.env.WEWE_TOKEN || '';
 const WEWE_XID = process.env.WEWE_XID || '431803268';
@@ -76,4 +78,4 @@ async function fetchAllMpArticles(seen) {
   return all;
 }
 
-module.exports = { fetchAllMpArticles, isPlatformEnabled, MP_SOURCES };
+module.exports = { fetchAllMpArticles, isPlatformEnabled, MP_SOURCES, checkPlatformToken };
