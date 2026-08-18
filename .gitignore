@@ -114,6 +114,9 @@
 # WeChat push: 本地推送记录与 pushplus token 不入库
 config.json
 data/
+gh-actions/data/
+gh-actions/output/
+login/
 
 # Temporary files
 *.tmp

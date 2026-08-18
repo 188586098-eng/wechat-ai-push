@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { getHtml } = require('./fetch');
-const { parseQbitai, parseZhidx, parseAiera, parse36kr, parseInfoq, parseNetEase, parsePanews, parseTrending, parseRss } = require('./sources');
+const { parseQbitai, parseZhidx, parseAiera, parse36kr, parseInfoq, parseNetEase, parseTrending, parseRss } = require('./sources');
 const store = require('./store');
 const push = require('./push');
+const auth = require('./auth');
 
 const config = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'),
@@ -16,14 +17,28 @@ const SOURCE_DEFS = [
   { key: 'kr36', url: 'https://gateway.36kr.com/api/mis/nav/home/nav/rank/hot', parse: parse36kr, post: true, body: { partner_id: 'wap', param: { siteId: 1, platformId: 2 } } },
   { key: 'infoq', url: 'https://www.infoq.cn/', parse: parseInfoq },
   { key: 'netease', url: 'https://m.163.com/news/sub/T1466412414497.html', parse: parseNetEase },
-  { key: 'panews', url: 'https://www.panewslab.com/zh-hant/columns/019e8dd4-8e70-708c-aaa5-1e9a821cf304', parse: parsePanews },
+  { key: 'panews', url: 'http://localhost:4000/feeds/MP_WXS_3223096120.rss', parse: parseRss },
   { key: 'trending', url: 'https://github.com/trending?since=daily&spoken_language_code=zh', parse: parseTrending },
-  { key: 'geekpark', url: 'https://wechat2rss.xlab.app/feed/1a5aec98e71c707c8ca092bc2c255b9d4bac477d.xml', parse: parseRss },
+  { key: 'geekpark', url: 'http://localhost:4000/feeds/MP_WXS_1304308441.rss', parse: parseRss },
   { key: 'jiqizhixin', url: 'http://localhost:4000/feeds/MP_WXS_3073282833.rss', parse: parseRss },
   { key: 'huxiu', url: 'http://localhost:4000/feeds/MP_WXS_1432156401.rss', parse: parseRss },
+  { key: 'tencent-tech', url: 'http://localhost:4000/feeds/MP_WXS_2398602260.rss', parse: parseRss },
+  { key: 'guanggu-github', url: 'http://localhost:4000/feeds/MP_WXS_3516884134.rss', parse: parseRss },
+  { key: 'datawhale', url: 'http://localhost:4000/feeds/MP_WXS_3226363426.rss', parse: parseRss },
+  { key: 'tencent-cloud', url: 'http://localhost:4000/feeds/MP_WXS_3264589119.rss', parse: parseRss },
 ];
 
 async function main() {
+  const needsLogin = SOURCE_DEFS.some((def) => def.url.includes('/feeds/MP_WXS_'));
+  if (needsLogin) {
+    try {
+      await auth.ensureLogin();
+    } catch (e) {
+      console.error(`[登录] 自检失败，中止本轮推送: ${e.message}`);
+      return;
+    }
+  }
+
   const db = store.load();
   const seen = new Set(db.seenUrls);
   const fresh = [];

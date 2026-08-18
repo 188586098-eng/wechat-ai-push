@@ -47,7 +47,8 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while deploying wewe-rss (v2.6.1) as a self-hosted WeChat official-account RSS source and wiring it into the push service
 - Category: Operations & Deployment
 - Instructions:
-  - wewe-rss（cooderl/wewe-rss v2.6.1）可自建为公众号 RSS 源：克隆到 /tmp/opencode/wewe-rss，pnpm install 后需先手动跑二进制（新版 pnpm 忽略 pnpm.onlyBuiltDependencies 失效），prisma 5.22.0 的 CLI 要直接调 node node_modules/.pnpm/prisma@5.22.0/node_modules/prisma/build/index.js（npx 会拉 7.9.1 不兼容）；SQLite 模式（DATABASE_URL=file:../data/wewe-rss.db）迁移与构建成功后再启动。
+  - wewe-rss（cooderl/wewe-rss v2.6.1）可自建为公众号 RSS 源：克隆到 /tmp/opencode/wewe-rss，pnpm 11 已改用 pnpm-workspace.yaml 的 allowBuilds 字段（如 allowBuilds: {prisma: true, '@nestjs/core': true, esbuild: true, '@prisma/client': true, '@prisma/engines': true}），package.json 的 pnpm.onlyBuiltDependencies 已被忽略（WARN: no longer read by pnpm），不配 allowBuilds 则 pnpm install 报 ERR_PNPM_IGNORED_BUILDS 且后续 build/start 会失败。
+  - SQLite 模式部署：先 mv apps/server/prisma 为备份、mv apps/server/prisma-sqlite apps/server/prisma（官方流程要求切换 schema 目录），然后 DATABASE_URL=file:../data/wewe-rss.db node node_modules/.pnpm/prisma@5.22.0/node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma 建表，再 generate --schema prisma/schema.prisma 生成 client，最后 pnpm build && DATABASE_URL=file:../data/wewe-rss.db DATABASE_TYPE=sqlite node dist/main 启动；prisma CLI 直接用 lock 版本 node 调 build/index.js（npx 会拉错版本不兼容），实际 lock 内 prisma 为 5.22.0、@prisma/client 为 5.10.1（版本不匹配 warning 可忽略，能正常工作）。
   - 启动 wewe-rss：AUTH_CODE 作为 tRPC 鉴权头，SERVER_ORIGIN_URL 必须设为公网 preview 域名（如 https://4000-xxxx.monkeycode-ai.online）而非 localhost，否则前端 tRPC Failed to fetch；运行于 4000 端口，SQLite 库在 apps/server/data/wewe-rss.db。
   - 微信读书扫码登录：tRPC mutation platform.createLoginUrl（POST）返回 {uuid, scanUrl}；轮询 GET /trpc/platform.getLoginResult?batch=1&input=<urlencoded {"0":{"id":uuid}}>，Authorization 头=AUTH_CODE；成功时返回 message:success + vid/token/username。前端页面 bug：onSuccess 对所有 message 都报「登录失败」且 waiting 状态白遮罩盖住二维码（apps/web/src/pages/accounts/index.tsx 需修复并重构建 web）。前端不可靠时可用独立 Node 服务（express+qrcode，/tmp/opencode/qrlogin/server.js）直接调 createLoginUrl 生成二维码 dataURL 并轮询 getLoginResult。
   - 重要：该 tRPC 服务用 initTRPC.create() 默认 identity transformer（非 superjson），POST mutation 请求体必须是 {"0":{...}}（batch=1），不能带 {"json":...} 包装，否则 input 解析为 undefined 报 invalid_type。
@@ -56,6 +57,17 @@ Entries discovered by the Agent during task execution should follow this format:
   - 已订阅公众号：机器之心 MP_WXS_3073282833、虎嗅APP MP_WXS_1432156401；登录账号「扬帆起航的墙」id=431803268。
   - 极客公园经免费公众号 RSS 服务 wechat2rss（wechat2rss.xlab.app）获取，feed 地址含 hash，OPML 列表在 /opml/sec.opml；wechat2rss 的 RSS 用纯文本 title，wewe-rss 的 RSS 用 CDATA 包裹 title，parseRss 必须先在 cleanTitle 剥离 CDATA（/<!\[CDATA\[([\s\S]*?)\]\]>/g），否则整段被当标签删除导致 0 条。
   - 主推送服务选文逻辑：fresh 数组按源顺序排列时，前几个源会占满 pushLimitPerRun 名额导致后续源永不入选；应改为按源轮询（每源每轮取一篇，每源上限 perSourceLimit，总数上限 pushLimitPerRun）以均衡覆盖全部源。
+  - 重新订阅公众号时若找不到可用 wxsLink（getMpInfo 的入参必须是 https://mp.weixin.qq.com/s/ 开头），可直接用已知 mpId 调 feed.add（body {"0":{"id":mpId,"mpName":...,"mpIntro":...,"updateTime":...}}）也能完成订阅；调 feed.refreshArticles 后 RSS 即出文章。平台.getMpArticles 可能返回空 []，应以 /feeds/{mp_id}.rss 输出为准判断订阅是否生效。机器之心 wxsLink 可从搜索结果的 mp.weixin.qq.com/s/ 链接获取（如 A5XZbSn4AYWoOqNB3R7DPg），虎嗅直接 mpId=MP_WXS_1432156401 订阅。
+
+[Project Knowledge Summary]
+- Date: 2026-08-17
+- Context: Discovered by Agent while adding auto re-login for wewe-rss account in the push service
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - wewe-rss 账号 token 失效时不会自动恢复：getMpArticles 遇 401（WeReadError401）会把账号 status 置 0 并加入当日 blockedAccountsMap，getAvailableAccount 只挑 status=1 且不在 blocked 列表的账号，导致所有订阅刷新失败、推送停留在旧文。修复需重新扫码换 token 并调 account.edit（body {"0":{"id":...,"data":{"token":...,"status":1}}}）——该接口会自动 removeBlockedAccount，无需重启服务。
+  - 推送前自检流程（/workspace/src/auth.js）：先调 tRPC query account.byId（注意是 GET + input 参数，POST 会报 No mutation-procedure）拿 status/token，再用平台接口 GET https://weread.111965.xyz/api/v2/platform/mps/MP_WXS_3073282833/articles?page=1 带 xid + Bearer token 验证（401=失效）。失效时 createLoginUrl → qrcode 生成 dataURL → pushplus 推送 HTML 二维码消息 → 轮询 getLoginResult（GET + input，服务端最长阻塞 120s，客户端 fetch 需 70s 超时并吞掉轮询异常）→ 扫码成功后 account.edit 更新 token+status=1 → feed.refreshArticles 全量刷新。
+  - tRPC query 与 mutation 调用格式不同：query 用 GET /trpc/{path}?batch=1&input=<urlencoded {"0":input}>，mutation 用 POST /trpc/{path}?batch=1 body={"0":input}；响应取 json[0].result.data，error 取 json[0].error.message。
+  - config.json 中新增 weweRssUrl/weweAuthCode/platformUrl/weweAccountId 四个字段供 auth.js 读取，推送服务每次运行前都做 token 自检（不做小时缓存，避免失效后仍跳过检测）。
 
 [Project Knowledge Summary]
 - Date: 2026-08-13
