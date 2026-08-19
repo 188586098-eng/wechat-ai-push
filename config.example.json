@@ -1,6 +1,8 @@
 {
   "pushplusToken": "你的pushplus_token",
   "pushLimitPerRun": 10,
+  "githubToken": "ghp_你的github_pat（可选，配置后扫码续期自动同步云端）",
+  "githubRepo": "188586098-eng/wechat-ai-push",
   "sources": {
     "qbitai": {
       "enabled": true,

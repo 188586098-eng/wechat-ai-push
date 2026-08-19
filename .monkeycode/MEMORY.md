@@ -93,3 +93,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 本机 token 维护（云端关闭也自给自足）：本地 wewe-rss（localhost:4000）+ qrlogin（localhost:4500，/tmp/opencode/qrlogin/server.js）+ scheduler（/workspace，PID 由 background terminal 管理）持续运行。全自动方式：scheduler 推送前 auth.ensureLogin 检测失效→推送二维码到微信→用户扫码→自动写库刷新。手动方式：打开 localhost:4500 扫码，但 qrlogin 扫码后 token 只存内存不自动写库，需再调 tRPC account.edit（POST /trpc/account.edit?batch=1 body {"0":{"id":"431803268","data":{"token":"<新token>","status":1}}}）回写数据库。
   - 公众号 token 是微信读书 Bearer token，无固定有效期会过期；本地库 token 更新与 GitHub Secret 是"复制"关系不同步，本机自动续期换新 token 后必须跑 sync-secret.sh 云端才生效。
   - 检测频率：云端 GitHub Actions 无独立高频检测，仅在每天 cron(7:00) 运行一次时调用 checkPlatformToken（即 24h 一次）；本地 scheduler 登录检测频率由 config.json 的 loginCheckIntervalHours 控制（已设为 6，默认 6），用独立状态文件 data/lastlogincheck.json 记录上次检测时间，检测成功才刷新时间戳、失败下轮重试；推送时（24h 周期）main() 内仍强制自检确保 token 有效。降低频率是为减少对微信读书的探测以降低风控暴露面。
+
+[Project Knowledge Summary]
+- Date: 2026-08-19
+- Context: Discovered by Agent while adding phone-only token renewal (auto-sync Secret + auto re-push) to the push service
+- Category: Operations & Deployment
+- Instructions:
+  - 手机端扫码续期闭环（纯手机操作）：微信读书 token 失效时用户只需扫 scheduler 推送的二维码，续期成功后依次自动完成 写回 wewe-rss 库 → gh secret set WEWE_TOKEN 同步 GitHub Secret → dispatch 云端 workflow（ai-news.yml）立即重推完整日报，无需再手动跑 sync-secret.sh 或在电脑前操作。
+  - 实现：src/syncSecret.js 新增 syncAfterRenew(token)，在 src/auth.js ensureLogin 扫码成功（renewed=true）分支调用；凭据读 config.json 的 githubToken（或环境变量 GH_TOKEN），用 gh CLI 的 stdin 方式设置 Secret（token 不落盘、不进命令行），成功后 POST /repos/{repo}/actions/workflows/ai-news.yml/dispatches 触发重推（需要 PAT 有 workflow scope）。githubRepo/githubRef 可在 config.json 覆盖，默认 188586098-eng/wechat-ai-push / main。
+  - 已配置 GitHub Secrets 实测为 3 个：PUSHPLUS_TOKEN、USER_LLM_API_KEY、WEWE_TOKEN；用户 PAT（ghp_ 开头）实测含 repo+workflow scope，满足自动同步与触发 workflow。
+  - 注意：验证 gh secret set 时曾用占位值覆盖 WEWE_TOKEN（原值本已失效），需在 devbox 重新运行 sync-secret.sh 或完成一次扫码续期恢复。
