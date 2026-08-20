@@ -93,3 +93,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 本机 token 维护（云端关闭也自给自足）：本地 wewe-rss（localhost:4000）+ qrlogin（localhost:4500，/tmp/opencode/qrlogin/server.js）+ scheduler（/workspace，PID 由 background terminal 管理）持续运行。全自动方式：scheduler 推送前 auth.ensureLogin 检测失效→推送二维码到微信→用户扫码→自动写库刷新。手动方式：打开 localhost:4500 扫码，但 qrlogin 扫码后 token 只存内存不自动写库，需再调 tRPC account.edit（POST /trpc/account.edit?batch=1 body {"0":{"id":"431803268","data":{"token":"<新token>","status":1}}}）回写数据库。
   - 公众号 token 是微信读书 Bearer token，无固定有效期会过期；本地库 token 更新与 GitHub Secret 是"复制"关系不同步，本机自动续期换新 token 后必须跑 sync-secret.sh 云端才生效。
   - 检测频率：云端 GitHub Actions 无独立高频检测，仅在每天 cron(7:00) 运行一次时调用 checkPlatformToken（即 24h 一次）；本地 scheduler 登录检测频率由 config.json 的 loginCheckIntervalHours 控制（已设为 6，默认 6），用独立状态文件 data/lastlogincheck.json 记录上次检测时间，检测成功才刷新时间戳、失败下轮重试；推送时（24h 周期）main() 内仍强制自检确保 token 有效。降低频率是为减少对微信读书的探测以降低风控暴露面。
+
+[Environment Knowledge Summary]
+- Date: 2026-08-18
+- Context: Discovered by Agent while explaining the runtime topology to a locally cloned copy of this repository
+- Category: Environment Configuration
+- Instructions:
+  - 本仓库存在三个运行位置，路径含义随环境不同：devbox（云端沙箱开发环境，实际运行地，项目根为 /workspace，wewe-rss 服务在 /tmp/opencode/wewe-rss、扫码服务在 /tmp/opencode/qrlogin/server.js）；GitHub Actions（云端定时任务，每次运行从仓库 clone 到 /home/runner/work/wechat-ai-push/wechat-ai-push）；本机（用户 Windows 电脑，克隆位置如 C:\Users\18858\MonkeyCode\wechat-ai-push）。用户在本机提问时，"本地 wewe-rss/scheduler/token"指的是 devbox 环境中的进程，本机克隆只有代码没有运行中的服务，路径须对应到 devbox 的解释不能照抄本机。
+  - devbox 是一个云端 Linux 开发环境（opencode/MonkeyCode 平台），运行在服务器上而非用户电脑；用户通过浏览器/IDE 访问，本机无直接文件系统通路，文件需经 git 同步或用户手动上传/下载。
+  - 微信读书 token、wewe-rss 数据库、pushplus token 均只在 devbox 的 /workspace 与 /tmp/opencode/wewe-rss 下，不入 git；本机 clone 后这些敏感文件不存在，需用户询问 devbox 会话或按 config.example.json 重建。
+  - 用户问"devbox 在哪里"时，正确回答：devbox 是承载本项目的云端 Linux 开发环境，运行着我们正在维护的 wewe-rss(4000)、qrlogin(4500)、scheduler 服务与微信读书 token；代码已通过 git 同步到 GitHub 仓库，本机克隆仅用于阅读代码和了解维护流程，实际运行与 token 维护需在 devbox 会话内进行。
