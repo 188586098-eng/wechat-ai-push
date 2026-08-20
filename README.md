@@ -61,6 +61,27 @@ node src/scheduler.js
 |--------|--------|------|
 | `pushIntervalHours` | 24 | 两次推送的最小间隔 |
 | `checkIntervalHours` | 1 | 调度器检查频率 |
+| `loginCheckIntervalHours` | 6 | 微信登录失效检测频率（小时） |
+
+### 5. 手机端扫码续期（自动同步 + 自动重推）
+
+微信读书 token 过期时（云端日报只剩官网源、且收到「登录已失效」提醒），只需**手机操作**：
+
+1. 保持本地 devbox 在线（wewe-rss + scheduler 运行中）
+2. 手机会收到带二维码的推送（scheduler 检测到失效后自动发送）
+3. 用**微信读书 App** 扫二维码确认
+4. 续期成功后自动完成：写回 wewe-rss 数据库 → 同步 `WEWE_TOKEN` 到 GitHub Secret → 触发云端 workflow 立即重推完整日报
+
+实现依赖 `config.json` 中配置 GitHub 凭据（二选一）：
+
+```jsonc
+{
+  "githubToken": "ghp_...",        // GitHub PAT（需 repo 权限，与 sync-secret.sh 相同凭据）
+  "githubRepo": "188586098-eng/wechat-ai-push"   // 可选，默认值即此
+}
+```
+
+> 说明：token 不会写入任何文件，仅通过 `gh secret set` 传入 GitHub。若未配置 `githubToken`，扫码续期仍会在本地生效，但需手动运行 `sync-secret.sh` 同步云端。
 
 ## 注意事项
 

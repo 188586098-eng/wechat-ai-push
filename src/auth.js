@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
 const push = require('./push');
+const { syncAfterRenew } = require('./syncSecret');
 
 const config = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'),
@@ -163,6 +164,7 @@ async function ensureLogin({ force = false } = {}) {
       await refreshAllFeeds();
       console.log('[登录] 全量刷新完成，文章已更新');
       saveLastChecked();
+      await syncAfterRenew(result.token);
       return { ok: true, renewed: true };
     } catch (e) {
       lastErr = e;
