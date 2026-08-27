@@ -115,3 +115,11 @@ Entries discovered by the Agent during task execution should follow this format:
   - 注意：验证 gh secret set 时曾用占位值覆盖 WEWE_TOKEN（原值本已失效），需在 devbox 重新运行 sync-secret.sh 或完成一次扫码续期恢复。
   - 2026-08-19 已恢复：重新扫码续期成功，新 token 已写回本地库（平台验证 HTTP 200），并运行 sync-secret.sh 同步到 GitHub Secret，两端一致。devbox config.json 未配置 githubToken，因此 syncSecret.js 的自动同步未生效，当前 token 同步靠手动运行 sync-secret.sh（带 GH_TOKEN 环境变量）。若需扫码后全自动同步，在 devbox config.json 增加 "githubToken": "<PAT>"（可选）。scheduler 扫码成功后会自动抓取并推送日报（本次实测抓 126 篇推 10 篇，pushplus code:200）。
   - 2026-08-20 全自动闭环已启用：devbox config.json 已配置 githubToken（600 权限）、githubRepo=188586098-eng/wechat-ai-push、githubRef=master。实测完整链路：token 失效 → scheduler(每6h检测)推二维码到微信 → 用户扫码 → 写回本地库(验证200) → syncSecret.js 自动同步 GitHub Secret → 自动 dispatch 云端 workflow 重推 → 微信收到日报(12篇+LLM摘要)。用户唯一手动动作是扫一次码。注意 token 失效周期不稳定（曾 8 小时内二次失效），全自动闭环可应对。scheduler 由 background terminal 管理，当前 PID 7646。
+- Date: 2026-08-27
+- Context: Discovered by Agent while diagnosing user complaint about daily "微信读书登录已失效" push notifications
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 现象与根因：2026-08-21 至 08-27 连续 7 天云端每日 cron 都报 [健康] 401 失效并推送文字提醒。WEWE_TOKEN Secret 最后更新停在 2026-08-20 22:55，说明 8/20 之后 devbox 本地续期闭环停摆（scheduler PID 7646 已不在运行，疑似机器关机/进程退出/终端关闭）。用户从未收到本地 scheduler 推的二维码（二维码只在 scheduler 运行时才会推送），收到的全是云端 gh-actions 的文字提醒——两者来源不同：二维码=本地 auth.js notifyLoginNeeded，文字提醒=云端 notifyTokenExpired。
+  - 云端已修复（commit 129a260）：gh-actions/index.js 增加失效提醒去重（gh-actions/data/last-warn.json，随 actions/cache 跨运行保留），同一失效状态 3 天内最多提醒一次，token 恢复有效时重置计数。shouldWarn 逻辑已单测通过。
+  - 待 devbox Agent 恢复本地闭环（治本）：1) 确认机器在线并以持久方式启动 scheduler（推荐 nohup node /workspace/src/scheduler.js > /workspace/data/scheduler.log 2>&1 & 或 systemd/pm2，避免终端退出即停）；2) 启动 wewe-rss（localhost:4000）；3) 手动跑一次 node src/auth.js 相关流程或等 scheduler 6h 检测触发，推二维码→用户扫码→自动同步 Secret→自动 dispatch 云端重推。恢复后 WEWE_TOKEN Secret updated_at 会刷新，云端日志应出现 [健康] 公众号 token 有效。
+  - 设计限制提醒：二维码有效期仅约 2 分钟（QR_EXPIRE_MS=115s，3 次尝试间隔 3s），用户必须在推送后 2 分钟内扫码；用户不在电脑/手机旁时续期会失败，scheduler 每 6h（loginCheckIntervalHours）会重试并推新二维码。
