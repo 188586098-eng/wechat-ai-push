@@ -9,7 +9,24 @@ const config = JSON.parse(
 );
 
 const REPO = config.githubRepo || '188586098-eng/wechat-ai-push';
-const REF = config.githubRef || 'main';
+const REF = config.githubRef || 'master';
+const GH_CANDIDATES = [
+  'gh',
+  'C:\\Program Files\\GitHub CLI\\gh.exe',
+];
+
+function resolveGh() {
+  for (const cmd of GH_CANDIDATES) {
+    try {
+      const { spawnSync } = require('child_process');
+      const r = spawnSync(cmd, ['--version'], { stdio: 'ignore' });
+      if (!r.error) return cmd;
+    } catch {
+      // 尝试下一个候选
+    }
+  }
+  return null;
+}
 
 function getGhToken() {
   return config.githubToken || process.env.GH_TOKEN || '';
@@ -21,8 +38,13 @@ function runGhSecretSet(token) {
     console.log('[sync] 未配置 githubToken/GH_TOKEN，跳过 GitHub Secret 同步');
     return Promise.resolve(false);
   }
+  const ghCmd = resolveGh();
+  if (!ghCmd) {
+    console.log('[sync] 未找到 gh CLI，跳过 GitHub Secret 同步');
+    return Promise.resolve(false);
+  }
   return new Promise((resolve) => {
-    const child = spawn('gh', ['secret', 'set', 'WEWE_TOKEN', '--repo', REPO], {
+    const child = spawn(ghCmd, ['secret', 'set', 'WEWE_TOKEN', '--repo', REPO], {
       env: { ...process.env, GH_TOKEN: ghToken },
       stdio: ['pipe', 'ignore', 'ignore'],
     });
