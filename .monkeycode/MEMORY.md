@@ -123,3 +123,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - 云端已修复（commit 129a260）：gh-actions/index.js 增加失效提醒去重（gh-actions/data/last-warn.json，随 actions/cache 跨运行保留），同一失效状态 3 天内最多提醒一次，token 恢复有效时重置计数。shouldWarn 逻辑已单测通过。
   - 待 devbox Agent 恢复本地闭环（治本）：1) 确认机器在线并以持久方式启动 scheduler（推荐 nohup node /workspace/src/scheduler.js > /workspace/data/scheduler.log 2>&1 & 或 systemd/pm2，避免终端退出即停）；2) 启动 wewe-rss（localhost:4000）；3) 手动跑一次 node src/auth.js 相关流程或等 scheduler 6h 检测触发，推二维码→用户扫码→自动同步 Secret→自动 dispatch 云端重推。恢复后 WEWE_TOKEN Secret updated_at 会刷新，云端日志应出现 [健康] 公众号 token 有效。
   - 设计限制提醒：二维码有效期仅约 2 分钟（QR_EXPIRE_MS=115s，3 次尝试间隔 3s），用户必须在推送后 2 分钟内扫码；用户不在电脑/手机旁时续期会失败，scheduler 每 6h（loginCheckIntervalHours）会重试并推新二维码。
+- Date: 2026-08-27 (晚)
+- Context: Discovered by Agent while migrating the renewal loop to the user's Windows PC (evening-only power-on)
+- Category: Operations & Deployment
+- Instructions:
+  - 新架构（晚间开机窗口）：用户 Windows 电脑每晚开机，云端 7:00 cron 依赖的 token 由本机前一晚续期提供。抓取始终在 GitHub 云端，本机只负责续期换 token。当日 22:57 实测全链路成功：扫码(扬帆起航的墙/431803268)→写库→平台验证 200→gh secret set 同步→dispatch 云端 workflow→conclusion=success 完整日报已推送。
+  - Windows 本机 wewe-rss 部署：C:/Users/18858/MonkeyCode/wewe-rss，pnpm 11 构建注意 pnpm-workspace.yaml 用 allowBuilds 映射（pnpm 会写入占位脚手架，需手动置 true：@nestjs/core/@prisma/client/@prisma/engines/esbuild/prisma）；apps/server 下 ren prisma prisma-mysql-bak && ren prisma-sqlite prisma 切 SQLite；DATABASE_URL=file:../data/wewe-rss.db migrate deploy 建库（cmd 下挂起属假象，实际已完成）；AUTH_CODE=wewe-admin-2026，监听 127.0.0.1:4000，node start-server.js 后台拉起（日志 server.log），ensure-running.js 端口检测+拉起。
+  - 续期脚本 wechat-ai-push/src/renewEvening.js：读 data/local-token.json 副本→平台验证→有效则直接 syncAfterRenew；无效则 createLoginUrl→终端 QRCode terminal 小图+pushplus 推手机→轮询 getLoginResult→account.byId 无账号走 account.add（注意 getLoginResult 返回的 vid 是数字，zod 要求字符串必须 String()），有账号走 account.edit→verifyToken→syncSecret 同步 Secret+dispatch。data/local-token.json 为敏感文件（gitignore 的 data/ 已覆盖）。
+  - 计划任务 WeReadEveningRenew：每天 21:30 跑 wechat-ai-push/renew-task.cmd（先 ensure-running 拉 wewe-rss，再跑续期，日志 data/renew.log）。schtasks 无引号路径注册成功。二维码 2 分钟有效，用户当晚不在电脑/手机旁则当日续期失败，次日 21:30 重试，云端 7:00 运行降级官网源（3 天提醒去重已生效）。
+  - config.json（gitignore）本次合并了 price 段与续期段；pushplusToken 复用 price.pushplusToken 同一账号（推送实测成功）。若用户主推送账号不同需替换。
