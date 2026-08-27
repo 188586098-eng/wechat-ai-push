@@ -27,6 +27,28 @@ const TOTAL_LIMIT = 12;
 const DATA_DIR = path.join(__dirname, 'data');
 const OUTPUT_DIR = path.join(__dirname, 'output');
 const SENT_FILE = path.join(DATA_DIR, 'sent.json');
+const WARN_FILE = path.join(DATA_DIR, 'last-warn.json');
+const WARN_INTERVAL_MS = 3 * 24 * 3600 * 1000; // 同 token 失效状态 3 天内最多提醒一次
+
+function loadLastWarn() {
+  try {
+    return JSON.parse(fs.readFileSync(WARN_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveLastWarn(state) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(WARN_FILE, JSON.stringify(state, null, 2));
+}
+
+// token 失效提醒去重：同一失效状态 3 天内不重复推送
+function shouldWarn(state, now) {
+  const last = state.warnAt || 0;
+  if (now - last < WARN_INTERVAL_MS) return false;
+  return true;
+}
 
 function loadSent() {
   try {
@@ -158,16 +180,23 @@ async function main() {
   let skipMp = false;
   if (health.expired) {
     skipMp = true;
-    console.log(`[健康] 公众号 token 已失效: ${health.reason}`);
-    try {
-      await notifyTokenExpired(health.reason);
-    } catch (e) {
-      console.log(`[提醒] 失效提醒发送失败: ${e.message}`);
+    const warn = loadLastWarn();
+    const now = Date.now();
+    if (shouldWarn(warn, now)) {
+      console.log(`[健康] 公众号 token 已失效: ${health.reason}`);
+      try {
+        await notifyTokenExpired(health.reason);
+        saveLastWarn({ warnAt: now });
+      } catch (e) {
+        console.log(`[提醒] 失效提醒发送失败: ${e.message}`);
+      }
+    } else {
+      console.log(`[健康] 公众号 token 已失效（3 天内已提醒，本次跳过）: ${health.reason}`);
     }
   } else {
     console.log('[健康] 公众号 token 有效');
+    saveLastWarn({ warnAt: 0 });
   }
-
   const { fresh, failures } = await fetchAll({ skipMp });
 
   if (!fresh.length) {
