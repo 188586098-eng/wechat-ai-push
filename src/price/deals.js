@@ -4,6 +4,7 @@
 // 只推送带"最低/次低/新低/低于大促价"标记的商品，无需淘宝商品ID，无需授权。
 const push = require('../push');
 const { escapeHtml } = push;
+const seenStore = require('./seen');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0 Safari/537.36';
@@ -122,17 +123,21 @@ async function runDeals(config, { token } = {}) {
     await new Promise((r) => setTimeout(r, 1500));
   }
 
-  // 去重（同一爆料可能被多个关键词命中），按标记强度排序后限量
-  const seen = new Set();
+  // 单次运行内去重（同一爆料可能被多个关键词命中）
+  const runSeen = new Set();
   const allGood = all.filter((it) => {
-    if (seen.has(it.id)) return false;
-    seen.add(it.id);
+    if (runSeen.has(it.id)) return false;
+    runSeen.add(it.id);
     return true;
   });
-  const max = config.dealMaxItems || 15;
-  const good = allGood.sort((a, b) => markWeight(b.mark) - markWeight(a.mark)).slice(0, max);
+  // 跨次运行去重：只推未推送过的，按标记强度排序限量后再登记
+  const known = seenStore.knownIds();
+  const fresh = allGood.filter((it) => !known.has(it.id));
+  const max = config.dealMaxItems || config.dealTopN || 15;
+  const good = fresh.sort((a, b) => markWeight(b.mark) - markWeight(a.mark)).slice(0, max);
+  seenStore.mark(good.map((it) => it.id));
 
-  console.log(`\n[deals] 共发现 ${allGood.length} 条历史低位好价，按标记强度取前 ${good.length} 条。`);
+  console.log(`\n[deals] 共发现 ${allGood.length} 条历史低位好价，新条目 ${fresh.length} 条，本次推送前 ${good.length} 条。`);
   if (!good.length) {
     console.log('[deals] 本次没有命中，不推送。');
     return { pushed: 0 };

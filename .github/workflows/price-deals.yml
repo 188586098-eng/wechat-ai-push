@@ -27,6 +27,15 @@ jobs:
         with:
           node-version: 20
 
+      - name: 恢复去重状态
+        uses: actions/cache@v4
+        with:
+          path: data/deals-seen.json
+          # key 带唯一 run_id 触发滚动保存；restore-keys 命中最近一次成功状态
+          key: deals-state-${{ github.run_id }}
+          restore-keys: |
+            deals-state-
+
       - name: 运行好价推送
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
