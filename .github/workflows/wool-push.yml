@@ -1,0 +1,43 @@
+name: 羊毛线报实时推送
+
+on:
+  schedule:
+    # 每 30 分钟一次，接近线报站信息流刷新节奏
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wool-push
+  cancel-in-progress: false
+
+jobs:
+  push-wool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 恢复去重状态
+        uses: actions/cache@v4
+        with:
+          path: data
+          # key 带唯一 run_id 触发滚动保存；restore-keys 命中最近一次成功状态
+          key: wool-state-${{ github.run_id }}
+          restore-keys: |
+            wool-state-
+
+      - name: 运行羊毛线报推送
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          WOOL_KEYWORDS: ${{ vars.WOOL_KEYWORDS }}
+          WOOL_EXCLUDE_KEYWORDS: ${{ vars.WOOL_EXCLUDE_KEYWORDS }}
+        run: node src/wool/index.js

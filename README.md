@@ -89,6 +89,19 @@ node src/scheduler.js
 - 若某数据源改版导致解析失效，运行日志会显示「失败」，按需调整 `src/sources.js`
 - 推送选文按**源轮询**取篇（每源最多 `perSourceLimit` 篇），保证各源都有机会入选，总数不超过 `pushLimitPerRun`
 
+## 羊毛线报实时推送
+
+聚合白菜哦（商品好价）/ 专业线报 / 赚客吧 / 新赚吧 / 线报迷（论坛活动线报）共五类优惠信息，按订阅关键词过滤后推送微信。云端每 30 分钟运行一次，每条仅推送一次。
+
+```bash
+npm run wool        # 手动运行（抓取→过滤→去重→推送）
+npm run wool:mock   # 模拟数据自检，不联网
+```
+
+- 关键词：环境变量 `WOOL_KEYWORDS`（逗号分隔）> `config.json` 的 `wool.keywords` > 内置默认清单；排除词同理（`WOOL_EXCLUDE_KEYWORDS` / `wool.excludeKeywords`）
+- 云端任务：`.github/workflows/wool-push.yml` 每 30 分钟运行，去重状态存 `data/wool-seen.json`，通过 actions/cache 跨次运行持久化
+- 单个来源抓取失败只记日志，不影响其余来源推送
+
 ## 依赖的 wewe-rss 服务
 
 机器之心、虎嗅等公众号源依赖本地运行的 wewe-rss（http://localhost:4000）：

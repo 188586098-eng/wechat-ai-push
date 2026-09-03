@@ -6,6 +6,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "wool": "node src/wool/index.js",
+    "wool:mock": "node src/wool/index.js --mock",
     "price": "node src/price/index.js",
     "price:auth": "node src/price/index.js --auth",
     "price:mock": "node src/price/index.js --mock",

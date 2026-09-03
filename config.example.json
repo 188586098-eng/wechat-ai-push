@@ -60,6 +60,18 @@
       "url": "http://localhost:4000/feeds/MP_WXS_1432156401.rss"
     }
   },
+  "wool": {
+    "pushplusToken": "复用 pushplusToken 或独立填写",
+    "keywords": [],
+    "excludeKeywords": [],
+    "maxItems": 20,
+    "quotas": { "baicaio": 4, "zhuanyes": 5, "xinzhuanba": 4, "zuanke8": 4, "xianbaomi": 3 },
+    "baicaio": { "queries": [] },
+    "zhuanyes": { "enabled": true },
+    "xinzhuanba": { "enabled": true, "forums": [2] },
+    "xianbaomi": { "enabled": true },
+    "zuanke8": { "forums": [2, 13, 14, 29] }
+  },
   "price": {
     "enabled": true,
     "pushplusToken": "复用 pushplusToken 或独立填写",

@@ -181,3 +181,4 @@ login/
 *.lz
 *.lzma
 *.iso
+.ohmyagent/
