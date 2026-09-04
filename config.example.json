@@ -70,6 +70,8 @@
     "zhuanyes": { "enabled": true },
     "xinzhuanba": { "enabled": true, "forums": [2] },
     "xianbaomi": { "enabled": true },
+    "hotSlots": 4,
+    "hotMinScore": 60,
     "zuanke8": { "forums": [2, 13, 14, 29] }
   },
   "price": {

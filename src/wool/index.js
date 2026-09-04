@@ -33,6 +33,7 @@ function saveLastPush(title, items) {
             priceText: it.priceText || '',
             merchant: it.merchant || '',
             timeText: it.timeText || '',
+            ageMin: it.time ? Math.round((Date.now() - it.time.getTime()) / 60000) : null,
             url: it.url,
           })),
         },
@@ -151,6 +152,12 @@ async function run() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run') || args.includes('--mock');
   const token = resolveToken();
+  const t0 = Date.now();
+
+  if (args.includes('--stats')) {
+    printStats();
+    return { stats: true };
+  }
 
   let all;
   const failures = [];
@@ -176,37 +183,73 @@ async function run() {
     ? all.filter((it) => !it.time || Date.now() - it.time.getTime() <= maxAgeHours * 3600 * 1000)
     : all;
 
-  // 2) 关键词匹配；论坛源附加时效过滤（Discuz 置顶老帖常被顶到列表前排，剔除超龄帖）
+  // 2) 关键词匹配；论坛源附加时效过滤（Discuz 置顶老帖常被顶到列表前排，剔除超龄帖）。
+  //    同时统计各源“未命中关键词但热度高”的候选（参与度 = 回复/浏览），
+  //    供 3.2 在不命中关键词时也优先推荐社区正在热议的羊毛。
   const rules = keywords.resolve(config);
   const forumMaxAge = ((config.wool && config.wool.forumMaxAgeDays) || 45) * 86400000;
+  const hotAgeMs = 72 * 3600 * 1000; // 只推荐 72 小时内的热帖，避免推“过气爆款”
+  const hotCands = new Map(); // source -> 源内热度最高的候选
   const matched = [];
   for (const it of fresh) {
     if (it.source !== 'baicaio' && it.time && Date.now() - it.time.getTime() > forumMaxAge) continue;
     const r = keywords.match(it, rules);
-    if (!r.ok) continue;
-    matched.push({ ...it, hit: r.hit || '' });
+    if (r.ok) {
+      matched.push({ ...it, hit: r.hit || '' });
+      continue;
+    }
+    if (it.hot > 0 && (!it.time || Date.now() - it.time.getTime() <= hotAgeMs)) {
+      const prev = hotCands.get(it.source);
+      if (!prev || it.hot > prev.hot) hotCands.set(it.source, it);
+    }
   }
 
   // 3) 单次运行内按 id 合并（同一商品命中多个搜索词会重复出现，命中词拼接），
-  //    再跨次运行去重（每条只推一次），最后排序限量
+  //    再跨次运行去重（每条只推一次）
   const merged = new Map();
   for (const it of matched) {
     const prev = merged.get(it.id);
     if (!prev) merged.set(it.id, it);
     else if (it.hit && !prev.hit.includes(it.hit)) prev.hit = `${prev.hit}、${it.hit}`;
   }
-  const unseen = state.filterNew([...merged.values()], !dryRun);
+  const kwUnseen = state.filterNew([...merged.values()], !dryRun);
   const maxItems = (config.wool && config.wool.maxItems) || 20;
-  seenFirst(all.length, matched.length, unseen.length);
+  const items = assignQuotas(kwUnseen, maxItems);
+  seenFirst(all.length, matched.length, kwUnseen.length);
 
-  // 按来源配额限量：白菜哦商品好价易刷屏，论坛活动线报(快递/银行/通用羊毛)需保底名额，
-  // 否则按全局时间排序时商品源会占满 maxItems。配额可用 config.wool.quotas 覆盖。
-  const items = assignQuotas(unseen, maxItems);
+  // 3.2) 热门槽：未命中关键词但社区参与度高(回复/浏览多)的新帖，每源取热度王，
+  //      跨源排序限量（默认每轮 ≤4，config.wool.hotSlots 覆盖），不占关键词名额。
+  const hotMinScore = (config.wool && config.wool.hotMinScore) || 60;
+  const hotSlots = (config.wool && config.wool.hotSlots) || 4;
+  const hotPool = [...hotCands.values()]
+    .filter((it) => it.hot >= hotMinScore)
+    .sort((a, b) => b.hot - a.hot)
+    .slice(0, hotSlots)
+    .map((it) => ({
+      ...it,
+      hit: `🔥热门·回${it.replies ?? 0}/浏${it.views ?? 0}`,
+    }));
+  const hotUnseen = state.filterNew(hotPool, !dryRun);
+  const taken = new Set(items.map((it) => it.id));
+  const hotPicked = hotUnseen.filter((it) => !taken.has(it.id));
+  items.push(...hotPicked);
+
   if (failures.length) console.log('[wool] 来源失败:', failures.join(' | '));
+  if (hotPicked.length) console.log(`[wool] 高热度推荐 ${hotPicked.length} 条（无关键词命中）: ${hotPicked.map((i) => i.title.slice(0, 18)).join(' | ')}`);
 
   if (!items.length) {
     console.log('[wool] 本次没有新命中，不推送。');
     return { pushed: 0 };
+  }
+
+  // 4) 时差统计：每条“发布 → 推送”延迟（分钟），帮助判断源的新鲜度与推送及时性
+  const ages = items
+    .map((it) => (it.time ? Math.round((Date.now() - it.time.getTime()) / 60000) : null))
+    .filter((v) => v != null);
+  if (ages.length) {
+    ages.sort((a, b) => a - b);
+    const med = ages[Math.floor(ages.length / 2)];
+    console.log(`[wool] 推送 ${items.length} 条，发布→推送时差 最小${ages[0]}m 中位${med}m 最大${ages[ages.length - 1]}m`);
   }
 
   if (dryRun || !token) {
@@ -217,8 +260,52 @@ async function run() {
 
   const title = await report.send(token, items);
   saveLastPush(title, items);
+  appendRun({ pushed: items.length, ages, bySource: tallyBySource(items), hot: hotPicked.length, elapsedSec: Math.round((Date.now() - t0) / 1000) });
   console.log(`[wool] 已推送 ${items.length} 条 → ${title}`);
   return { pushed: items.length };
+}
+
+function tallyBySource(items) {
+  const m = {};
+  for (const it of items) m[it.source] = (m[it.source] || 0) + 1;
+  return m;
+}
+
+/** 每次真实推送的运行摘要追加到 data/wool-runs.jsonl，供 --stats 分析时差与来源 */
+function appendRun(rec) {
+  try {
+    const file = path.join(__dirname, '..', '..', 'data', 'wool-runs.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ts: new Date().toISOString(), ...rec }) + '\n');
+  } catch {
+    // 统计落盘失败不影响推送
+  }
+}
+
+/** --stats：分析最近运行历史（发布→推送时差、推送量、热门槽） */
+function printStats() {
+  const file = path.join(__dirname, '..', '..', 'data', 'wool-runs.jsonl');
+  let lines;
+  try {
+    lines = fs.readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean).slice(-30);
+  } catch {
+    console.log('[wool][stats] 暂无运行记录。请先真实推送若干次（node src/wool/index.js），本机与云端运行都会落盘 data/wool-runs.jsonl。');
+    return;
+  }
+  const rows = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  console.log(`\n[wool][stats] 最近 ${rows.length} 次运行（最早 ${(rows[0] || {}).ts || '-'} → 最晚 ${(rows[rows.length - 1] || {}).ts || '-'}）\n`);
+  console.log('时间(北京时间)        推送数  热门槽  发布→推送时差(中位/最大)  来源分布');
+  for (const r of rows) {
+    const a = r.ages || [];
+    const med = a.length ? a[Math.floor(a.length / 2)] : '-';
+    const mx = a.length ? a[a.length - 1] : '-';
+    const src = Object.entries(r.bySource || {})
+      .map(([k, v]) => `${k}:${v}`)
+      .join(' ');
+    const t = new Date(r.ts);
+    const bj = `${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    console.log(`${bj}        ${String(r.pushed).padStart(3)}       ${r.hot || 0}     ${String(med).padStart(5)}m / ${String(mx).padStart(5)}m    ${src}`);
+  }
 }
 
 function timeOf(it) {
@@ -266,12 +353,16 @@ function seenFirst(total, afterMatch, afterDedupe) {
 
 function mockItems() {
   const h = 3600 * 1000;
+  const now = new Date();
   return [
     { id: 'mock-1', source: 'baicaio', sourceName: '白菜哦', title: '某品牌蓝牙耳机 大额券后 9.9 元包邮', priceText: '9.9元包邮', merchant: '京东商城', keyword: '蓝牙耳机', url: 'https://example.com/1' },
     { id: 'mock-2', source: 'baicaio', sourceName: '白菜哦', title: '视频会员年卡 免费领(限新用户)', priceText: '0元', merchant: '淘宝网', keyword: '会员', url: 'https://example.com/2' },
-    { id: 'mock-3', source: 'zuanke8', sourceName: '赚客吧·有奖活动', title: '农行 APP 签到领话费券 薅羊毛', merchant: '[重点参与]', keyword: '有奖活动', url: 'https://example.com/3' },
+    { id: 'mock-3', source: 'zuanke8', sourceName: '赚客吧·有奖活动', title: '农行 APP 签到领话费券 薅羊毛', merchant: '[重点参与]', keyword: '有奖活动', url: 'https://example.com/3', time: new Date(now.getTime() - 25 * 60000) },
     { id: 'mock-4', source: 'zuanke8', sourceName: '赚客吧·免费赠品', title: '各大平台外卖红包汇总 可叠加', merchant: '', keyword: '免费赠品', url: 'https://example.com/4' },
     { id: 'mock-5', source: 'zuanke8', sourceName: '赚客吧·区域活动', title: '刷单兼职日结(测试排除词生效)', merchant: '', keyword: '区域活动', url: 'https://example.com/5' },
+    // 无关键词命中但超高热度：验证“热门槽”推荐链路
+    { id: 'mock-6', source: 'zuanke8', sourceName: '赚客吧·有奖活动', title: '某大厂新人礼包领取姿势讨论楼(高回复验证)', merchant: '[重点参与]', keyword: '有奖活动', views: 99999, replies: 888, hot: 99999 > 3000 ? 3000 + 888 * 30 : 0, time: new Date(now.getTime() - 40 * 60000), url: 'https://example.com/6' },
+    { id: 'mock-7', source: 'xianbaomi', sourceName: '线报迷', title: '一个浏览量极低的无词帖', views: 1, replies: 0, hot: 1, url: 'https://example.com/7' },
   ];
 }
 

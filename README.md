@@ -99,7 +99,9 @@ npm run wool:mock   # 模拟数据自检，不联网
 ```
 
 - 关键词：环境变量 `WOOL_KEYWORDS`（逗号分隔）> `config.json` 的 `wool.keywords` > 内置默认清单；排除词同理（`WOOL_EXCLUDE_KEYWORDS` / `wool.excludeKeywords`）
+- **热门槽**：未命中关键词但社区参与度高（回复/浏览多）的新帖也会优先推荐（每轮默认 ≤4 条，`wool.hotSlots` / `wool.hotMinScore` 可调），示例徽标「🔥热门·回N/浏N」
 - 云端任务：`.github/workflows/wool-push.yml` 每 30 分钟运行，去重状态存 `data/wool-seen.json`，通过 actions/cache 跨次运行持久化
+- 时差与运行分析：每次真实推送把发布→推送时差写入 `data/wool-runs.jsonl`，`node src/wool/index.js --stats` 查看最近 30 次分布
 - 单个来源抓取失败只记日志，不影响其余来源推送
 
 ## 依赖的 wewe-rss 服务

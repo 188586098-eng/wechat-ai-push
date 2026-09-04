@@ -34,6 +34,10 @@ function parseBlock(forum, chunk) {
   if (!titleM) return null;
   const dateM = b.match(/(\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2})/);
   const tagM = b.match(/\[<a[^>]*(?:typeid=\d+)[^>]*>([^<]{2,10})<\/a>/);
+  // 热度：Discuz 列表行 “回复数(引用) / 浏览量(em)” 两列
+  const numM = b.match(/class="num"><a[^>]*>(\d+)<\/a><em>(\d+)<\/em>/);
+  const replies = numM ? +numM[1] : 0;
+  const views = numM ? +numM[2] : 0;
   return {
     id: 'zuanke8-' + tidM[1],
     source: 'zuanke8',
@@ -41,6 +45,9 @@ function parseBlock(forum, chunk) {
     title: decodeGbkEntities(titleM[1]).trim(),
     priceText: '',
     merchant: tagM ? `[${tagM[1]}]` : '',
+    views,
+    replies,
+    hot: Math.min(views, 3000) + replies * 30, // 浏览量截断防刷屏，回复数更能代表参与度
     timeText: dateM ? dateM[1] : '',
     time: dateM ? parseDashDate(dateM[1]) : null,
     url: `${SITE}/thread-${tidM[1]}-1-1.html`,

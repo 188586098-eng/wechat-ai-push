@@ -42,6 +42,11 @@ function parseThreads(html) {
     const timeM = block.match(/<span title="(\d{4})-(\d{1,2})-(\d{1,2}) (\d{1,2}):(\d{2})"/);
     const title = decodeEntities(titleM[1]).replace(/<[^>]+>/g, '').trim();
     if (!title) continue;
+    // 热度：首页线程流自带 “N 阅读 · M 评论”（浏览参与度直接决定是否值得优先推荐）
+    const viewsM = block.match(/·\s*(\d+)\s*阅读/);
+    const repliesM = block.match(/·\s*(\d+)\s*评论/);
+    const views = viewsM ? +viewsM[1] : 0;
+    const replies = repliesM ? +repliesM[1] : 0;
     out.push({
       id: 'zhuanyes-' + idM[1],
       source: 'zhuanyes',
@@ -49,6 +54,9 @@ function parseThreads(html) {
       title: title.slice(0, 80),
       priceText: '',
       merchant: '',
+      views,
+      replies,
+      hot: views + replies * 20, // 参与度：评论权重远高于浏览
       timeText: timeM
         ? `${timeM[1]}-${timeM[2].padStart(2, '0')}-${timeM[3].padStart(2, '0')} ${timeM[4]}:${timeM[5]}`
         : '',
