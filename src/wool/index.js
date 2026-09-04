@@ -195,6 +195,8 @@ async function run() {
     if (it.source !== 'baicaio' && it.time && Date.now() - it.time.getTime() > forumMaxAge) continue;
     const r = keywords.match(it, rules);
     if (r.ok) {
+      // 线报迷是讨论流社区：观点/问答/吐槽帖即使命中主题词也不算线报，剔除
+      if (it.source === 'xianbaomi' && keywords.isForumDiscussion(it.title)) continue;
       matched.push({ ...it, hit: r.hit || '', strongCount: r.strongCount || 0 });
       continue;
     }

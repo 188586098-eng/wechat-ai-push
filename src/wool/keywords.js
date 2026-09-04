@@ -196,4 +196,15 @@ function match(item, rules) {
   return { ok: true, hit: hit || item.keyword, strongCount: strongHits.length, weakCount: weakHits.length };
 }
 
-module.exports = { resolve, match, STRONG_KEYWORDS, WEAK_KEYWORDS, DEFAULT_KEYWORDS, DEFAULT_EXCLUDE };
+/**
+ * 判断标题是否为“讨论/观点/求助帖”而非即时线报（仅用于论坛讨论流源过滤）。
+ * 特征：疑问句、闲聊观点动词、吐槽词。保守词表，避免误伤活动标题。
+ */
+const DISCUSS_RE =
+  /[?？]|吗|么|怎么样|怎么看|咋|什么情况|值不值|该不该|能不能|可不可以|要不要|有没有|吧友|求问|求教|请教|求助|请教|大家觉得|你们觉得|我感觉|来聊聊|吐槽|避雷|翻车|无语|离谱|真坑|太坑|暴露了|都(涨价|没了|关了|暴露)/;
+
+function isForumDiscussion(title) {
+  return DISCUSS_RE.test(String(title || ''));
+}
+
+module.exports = { resolve, match, isForumDiscussion, STRONG_KEYWORDS, WEAK_KEYWORDS, DEFAULT_KEYWORDS, DEFAULT_EXCLUDE };
