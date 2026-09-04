@@ -72,6 +72,7 @@
     "xianbaomi": { "enabled": true },
     "hotSlots": 4,
     "hotMinScore": 60,
+    "minWeakHits": 2,
     "zuanke8": { "forums": [2, 13, 14, 29] }
   },
   "price": {

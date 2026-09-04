@@ -99,6 +99,7 @@ npm run wool:mock   # 模拟数据自检，不联网
 ```
 
 - 关键词：环境变量 `WOOL_KEYWORDS`（逗号分隔）> `config.json` 的 `wool.keywords` > 内置默认清单；排除词同理（`WOOL_EXCLUDE_KEYWORDS` / `wool.excludeKeywords`）
+- **强弱词分层**：内置词分强词（快递/银行/话费/免单等主题，命中 1 个即推）与弱词（红包/会员/领券等泛词，仅命中需 ≥2 个，`wool.minWeakHits` 可调），抑制"标题含个红包就推"的低信息量推送
 - **热门槽**：未命中关键词但社区参与度高（回复/浏览多）的新帖也会优先推荐（每轮默认 ≤4 条，`wool.hotSlots` / `wool.hotMinScore` 可调），示例徽标「🔥热门·回N/浏N」
 - 云端任务：`.github/workflows/wool-push.yml` 每 30 分钟运行，去重状态存 `data/wool-seen.json`，通过 actions/cache 跨次运行持久化
 - 时差与运行分析：每次真实推送把发布→推送时差写入 `data/wool-runs.jsonl`，`node src/wool/index.js --stats` 查看最近 30 次分布

@@ -195,7 +195,7 @@ async function run() {
     if (it.source !== 'baicaio' && it.time && Date.now() - it.time.getTime() > forumMaxAge) continue;
     const r = keywords.match(it, rules);
     if (r.ok) {
-      matched.push({ ...it, hit: r.hit || '' });
+      matched.push({ ...it, hit: r.hit || '', strongCount: r.strongCount || 0 });
       continue;
     }
     if (it.hot > 0 && (!it.time || Date.now() - it.time.getTime() <= hotAgeMs)) {
@@ -210,7 +210,10 @@ async function run() {
   for (const it of matched) {
     const prev = merged.get(it.id);
     if (!prev) merged.set(it.id, it);
-    else if (it.hit && !prev.hit.includes(it.hit)) prev.hit = `${prev.hit}、${it.hit}`;
+    else {
+      if (it.hit && !prev.hit.includes(it.hit)) prev.hit = `${prev.hit}、${it.hit}`;
+      prev.strongCount = Math.max(prev.strongCount || 0, it.strongCount || 0);
+    }
   }
   const kwUnseen = state.filterNew([...merged.values()], !dryRun);
   const maxItems = (config.wool && config.wool.maxItems) || 20;
@@ -343,7 +346,12 @@ function assignQuotas(items, maxItems) {
   const out = [];
   for (const [s, list] of bySource) {
     if (!quotas[s] || quotas[s] <= 0) continue;
-    out.push(...list.sort((a, b) => timeOf(b) - timeOf(a)).slice(0, quotas[s]));
+    // 组内排序：强词命中数多(主题更明确)的优先，再按发布时间新到旧
+    out.push(
+      ...list
+        .sort((a, b) => (b.strongCount || 0) - (a.strongCount || 0) || timeOf(b) - timeOf(a))
+        .slice(0, quotas[s]),
+    );
   }
   return out;
 }
