@@ -9,18 +9,8 @@ const seenStore = require('./seen');
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0 Safari/537.36';
 
-const DEFAULT_KEYWORDS = [
-  '蓝牙耳机',
-  '智能手表',
-  '扫地机器人',
-  '垃圾袋',
-  '纸巾',
-  '洗发水',
-  '保温杯',
-  '行李箱',
-  '机械键盘',
-  '空气炸锅',
-];
+// 注意：不提供任何内置默认关键词。历史低位好价只按用户显式提交的关键词搜索——
+// 用户没配置 DEAL_KEYWORDS / config.dealKeywords 时整段跳过，绝不兜底推送。
 
 // 历史低位标记识别
 const LOW_MARK_RE = /历史新低|历史最低|历史低价|新低|低于双11|低于双12|低于618|低价|次低/;
@@ -95,19 +85,25 @@ function parseItems(html, keyword) {
   return items;
 }
 
-/** 关键词来源：环境变量 DEAL_KEYWORDS > config.dealKeywords > 默认列表 */
+/** 关键词来源：环境变量 DEAL_KEYWORDS > config.dealKeywords；两者都未提供 → 空数组(不推) */
 function resolveKeywords(config) {
   if (process.env.DEAL_KEYWORDS) {
     return process.env.DEAL_KEYWORDS.split(/[,，]/)
       .map((s) => s.trim())
       .filter(Boolean);
   }
-  return config.dealKeywords && config.dealKeywords.length ? config.dealKeywords : DEFAULT_KEYWORDS;
+  return (config.dealKeywords || []).slice();
 }
 
 /** 好价发现主流程 */
 async function runDeals(config, { token } = {}) {
   const keywords = resolveKeywords(config);
+  if (!keywords.length) {
+    console.log(
+      '[deals] 未配置关键词（DEAL_KEYWORDS / config.dealKeywords 均为空），按用户要求跳过好价搜索流，不推送。',
+    );
+    return { pushed: 0, skipped: true };
+  }
   console.log(`[deals] 搜索 ${keywords.length} 个关键词: ${keywords.join('、')}`);
 
   const all = [];
