@@ -70,6 +70,8 @@ function parseItems(html, keyword) {
     // 标记
     const markM = txt.match(/(历史新低|历史最低|历史低价|新低|低于双11|低于双12|低于618|次低|\d+天(?:最低|次低))/);
     const mark = markM ? markM[1] : '';
+    // 已结束/失效的活动爆料不再可买，跳过（如甜苦瓜常年"X个装"活动常带历史标记但已过期）
+    if (/已结束|已失效|已过期|已下架/.test(txt)) continue;
     // 时间
     const timeM = txt.match(/(\d{2}-\d{2}\s*\d{2}:\d{2})/);
     // 平台：时间后的一段（拼多多/京东自营/京东商城 等）
@@ -155,15 +157,37 @@ function money(v) {
   return v == null ? '-' : `¥${v}`;
 }
 
+// 折后单件价：慢慢买爆料多为"X个装/共X个/X袋"的整件总价，
+// 甜苦瓜等烘焙常年"买N个打折"，需按件数折算单价才可比。
+// 先剔除重量单位(600g/540g/斤等)再找第一个 数字+个数单位。
+const UNIT_RE = /(\d{1,3})\s*(个|枚|只|袋|包|支|瓶|盒|杯|片|桶|件|条|提)\s*(?:装|盒)?/;
+const MASS_UNIT_RE = /\d+(?:g|克|kg|千克|斤|ml|毫升|l|升)\s*/g;
+function unitPriceOf(it) {
+  const total = parseFloat(it.price);
+  if (!total || !isFinite(total)) return null;
+  const t = String(it.title || '')
+    .replace(MASS_UNIT_RE, '') // 去掉 600g/540g 等重量，防被当作个数
+    .replace(/\s*×\s*/g, '');
+  const m = t.match(UNIT_RE);
+  if (!m) return null;
+  const count = parseInt(m[1], 10);
+  const unit = m[2];
+  if (!count || count < 2) return null;
+  const each = total / count;
+  return { count, unit, each };
+}
+
 function buildDealsHtml(good) {
   const rows = good
     .map((it) => {
+      const u = unitPriceOf(it);
       return `<tr>
         <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;max-width:260px">
           <a href="${escapeHtml(it.url)}" style="text-decoration:none;color:#111"><b>${escapeHtml(it.title.slice(0, 30))}</b></a>
         </td>
         <td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap">
           <b style="color:#e4393c;font-size:16px">${money(it.price)}</b>
+          ${u ? `<br><span style="font-size:12px;color:#999">≈¥${u.each.toFixed(2)}/${u.unit}</span>` : ''}
         </td>
         <td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap">
           <span style="color:#1a8917;font-weight:bold">${escapeHtml(it.mark || '')}</span>
@@ -189,4 +213,4 @@ function buildDealsHtml(good) {
   </div>`;
 }
 
-module.exports = { runDeals, buildDealsHtml, fetchSearchItems, parseItems };
+module.exports = { runDeals, buildDealsHtml, fetchSearchItems, parseItems, unitPriceOf };
