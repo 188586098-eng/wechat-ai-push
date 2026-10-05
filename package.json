@@ -11,7 +11,15 @@
     "price": "node src/price/index.js",
     "price:auth": "node src/price/index.js --auth",
     "price:mock": "node src/price/index.js --mock",
-    "price:deals": "node src/price/index.js --deals"
+    "price:deals": "node src/price/index.js --deals",
+    "wechat-archive": "node src/wechat-archive/index.js",
+    "wechat-clipboard": "node src/wechat-clipboard.js",
+    "jobs": "node src/jobs/index.js",
+    "jobs:dry": "node src/jobs/index.js --dry-run",
+    "jobs:mock": "node src/jobs/index.js --mock",
+    "jobs:stats": "node src/jobs/index.js --stats",
+    "jobs:schedule": "node src/jobs/scheduler.js",
+    "jobs:login": "node src/jobs/login.js"
   },
   "engines": {
     "node": ">=18"

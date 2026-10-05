@@ -132,3 +132,32 @@ Entries discovered by the Agent during task execution should follow this format:
   - 续期脚本 wechat-ai-push/src/renewEvening.js：读 data/local-token.json 副本→平台验证→有效则直接 syncAfterRenew；无效则 createLoginUrl→终端 QRCode terminal 小图+pushplus 推手机→轮询 getLoginResult→account.byId 无账号走 account.add（注意 getLoginResult 返回的 vid 是数字，zod 要求字符串必须 String()），有账号走 account.edit→verifyToken→syncSecret 同步 Secret+dispatch。data/local-token.json 为敏感文件（gitignore 的 data/ 已覆盖）。
   - 计划任务 WeReadEveningRenew：每天 21:30 跑 wechat-ai-push/renew-task.cmd（先 ensure-running 拉 wewe-rss，再跑续期，日志 data/renew.log）。schtasks 无引号路径注册成功。二维码 2 分钟有效，用户当晚不在电脑/手机旁则当日续期失败，次日 21:30 重试，云端 7:00 运行降级官网源（3 天提醒去重已生效）。
   - config.json（gitignore）本次合并了 price 段与续期段；pushplusToken 复用 price.pushplusToken 同一账号（推送实测成功）。若用户主推送账号不同需替换。
+- Date: 2026-09-13
+- Context: Agent 排查公众号归档需求时发现 wewe-rss 依赖的第三方中转已挂，并据此确认整条公众号链路（云端日报 + 归档 + 晚间续期）同时失效
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 根因：wewe-rss 把 wxs2mp / articles / login 等全部接口指向作者私有中转，地址由 PLATFORM_URL 决定（默认 https://weread.111965.xyz）。该中转现在对所有路径返回 Cloudflare 502（实测根路径、`/api/v2/platform/mps/*/articles`、`/api/v2/user`、`/trpc` 连续 5 次全 502，非抖动）。README 给的备用镜像 https://weread.965111.xyz 已永久失效：它跑在 Deno Deploy Classic 上，该服务 2026-07-20 下线，响应体为 `404 DEPLOYMENT_NOT_FOUND`。作者 Cloudflare R2（r2-assets.111965.xyz）仍返回 200，说明账号还在、平台部署没了。
+  - 中转不在开源仓库里（wewe-rss 只有 apps/server + apps/web），无任何 fallback，所以中转一死：订阅、刷新、扫码登录全线不可用。本机 wewe-rss 服务本身是健康的（ensure-running.js 可拉起，监听 127.0.0.1:4000，账号 431803268 status=1，`/feeds` 返回空），但拉不到任何文章。
+  - 影响范围（三处都依赖同一中转，全部 502）：① src/auth.js:48 verifyToken；② src/renewEvening.js:59 verifyToken；③ 云端 gh-actions/health.js:15 + wechat.js:3 + index.js 的 fetchAllMpArticles。注意 src/auth.js:141-145 的 verifyToken 失败被 catch 后直接 `valid = true`，即中转挂掉时续期脚本会误判「token 有效」而跳过续期，症状是静默不续期而不是报错。
+  - 另一个独立问题：计划任务 WeReadEveningRenew 在本机已不存在（schtasks 报 "system cannot find the file specified"，全表也无任何 WeRead/wechat/Renew 任务）。这与 renew.log 末条停在 2026/8/28 21:31、账号 token updatedAt 停在 2026-08-28T13:30:53Z 一致——晚间续期已 16 天没跑过。
+  - 行业背景（2026-07 系统性封禁，非本项目独有）：微信 7 月底关闭 appmsgpublish（公众号历史文章列表接口），12.9k star 的 wechat-article-exporter 于 2026-07-30 宣布停止维护并转只读归档，依赖该接口做 RSS 桥接/同步/备份的项目集体停更。结论：「自动拿到文章列表」在免费开源范围内已基本没有可靠路径；幸存路线只剩付费第三方服务、微信读书系（wewe-rss，风控严）和驱动微信 PC 客户端 UI。
+  - 仍然可用的部分：短链 https://mp.weixin.qq.com/s/<id> 本机直连 200 + 完整 #js_content + data-src 图片；src/wechat-archive 已能按短链/links.txt 归档为 Markdown + 本地图片，图片一一对应、幂等跳过、不依赖任何第三方服务。长链（?__biz=）和 profile_ext 历史消息页均已实测封死，不要再试。
+
+[Project Knowledge Summary]
+- Date: 2026-10-04
+- Context: Agent 调研「还有哪些渠道适合水利/监理招聘」并在 src/jobs 接入三个新渠道
+- Category: Operations & Deployment
+- Instructions:
+  - 新增并实测通过三个渠道（均纯 HTTP，无需浏览器/登录）：① 监理招聘网 jianlihr.com — 监理垂直站，robots 仅禁简历/管理路径，关键词页 `/jobs/keys-{kw}.html`（翻页 `-p-{N}.html`），列表自带薪资/发布日期/公司/地点；② 水利英才网 waterhr.com — 水利垂直站（job1001 平台），搜索 `SearchResult.php?jtzw={kw}&page={N}`，列表自带经验/学历/地点/薪资/更新时间；③ 中国水利人才网 rencai.mwr.cn — 水利部官方平台招聘公告，表格行+日期，走通用公告适配器（segmentPattern 用负向先行断言避免跨行）。实跑：三渠道合计新增 132 条水利监理岗。
+  - 旧结论纠错：水利英才网的现役域名是 `waterhr.com`（可正常采集）；`shuilihr.com`、`waterhr.net` 才是失效域名，勿再当成同一个站。
+  - 建筑英才网 buildhr.com 不可合规采集：真实职位列表只在 robots 明确 `Disallow: /so/` 的路径下，`/job`、`/navigation` 均为 JS 空壳（职位链接 0 个），`/jobs` 返回 429；故不接入。国聘 iguopin.com 首页仅 1025 字节=纯 SPA，需逆向 API，暂缓。325建筑网以证书挂靠为主，不合规不接。
+  - 工程实践：cmd.exe 下 `catch (e) stmt` 式的无花括号 catch 是语法错误（ES 规范要求 catch 体必须是 Block，与 if 不同）；`$` 变量在 Cmd 工具里会被吞掉、`node -p "..."` 内联表达式也不可靠，验证脚本一律落成临时 .js 文件执行后再删。新增适配器须在 `src/jobs/index.js` 的 HTTP_ADAPTERS 登记一行，解析自测放 `src/jobs/adapters.test.js`（用真实 HTML 片段）。
+
+[Project Knowledge Summary]
+- Date: 2026-10-05
+- Context: 排查国聘可采性、并接入 6 个省级水利厅公告页
+- Category: Operations & Deployment
+- Instructions:
+  - 国聘 iguopin.com **不接入（定案）**：robots 全放行、SPA 可访问，但职位列表接口 `POST https://api4.iguopin.com/api/jobs/v3/list` 强制要求 `Sign`/`T`/`Nonce` 三个请求签名头（在 `https://www.iguopin.com/static/js/main.*.js` 的 axios 请求拦截器里对 `/api/jobs/v3` 等前缀计算，密钥硬编码在 bundle 内），裸调或换参数一律返回 `{"code":1,"msg":"请求成功","data":null}`。接入必须逆向其签名算法，属项目禁止的 token 逆向，故放弃。接口主机清单与 REACT_APP_BASE_API 均在该 main.js 里（api4/gp-api/appv5-api 等）。
+  - 省级水利厅公告页接入 6 个（均纯 HTTP、服务端渲染）：山东·招考录用 `wr.shandong.gov.cn/zwgk_319/fdzdgknr/rsxx/zkly/`（最对口）、广东·人事信息 `slt.gd.gov.cn/rsxx8773/index.html`（招聘最密集），以及安徽/陕西/福建·通知公告、四川·公示公告。四省未接入：湖北 slt.hubei.gov.cn 返回 412（云 WAF）、云南 slt.yn.gov.cn 域名不可达、浙江与湖南的通知公告栏目是 JS 渲染（湖南人事信息虽静态但全是任免/退休通知）。全部复用 `src/jobs/config.js` 的 `PROV_NOTICE_RULE` 常量。
+  - 踩坑（重要）：`PROV_NOTICE_RULE` 的标题抽取长度上限必须够大（现 600）——安徽省水利厅在 `<a>` 与标题之间插了约 200 字符缩进空白，上限 140 时会够不到 `</a>`，**该站被静默解析成 0 条**（不报错，只在日志里 warning）。新增省厅栏目后务必看 `--dry-run` 的“抓取 N 条”是否为 0。

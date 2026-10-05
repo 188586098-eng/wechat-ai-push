@@ -75,6 +75,39 @@
     "minWeakHits": 2,
     "zuanke8": { "forums": [2, 13, 14, 29] }
   },
+  "jobs": {
+    "enabled": true,
+    "queries": ["水利监理", "水利工程监理", "总监理工程师", "水利项目经理", "水利资料员", "水利水电项目总工"],
+    "sites": {
+      "zhaopin": { "enabled": true, "maxPages": 3, "detailEnrich": true, "detailMaxPerRun": 15 },
+      "boss": { "enabled": false, "requiresLogin": true, "loginUrl": "https://www.zhipin.com/web/user/?ka=header-login", "storageState": "auth/boss.json" },
+      "liepin": { "enabled": false, "requiresLogin": true, "loginUrl": "https://www.liepin.com/user/login/", "storageState": "auth/liepin.json" },
+      "job2299": { "enabled": true, "maxPages": 3 },
+      "51job": { "enabled": true, "maxPages": 1 },
+      "jianlihr": { "enabled": true, "maxPages": 2 },
+      "waterhr": { "enabled": true, "maxPages": 2 },
+      "rencai": { "enabled": true, "maxPages": 1 },
+      "anhui_tzgg": { "enabled": true, "maxPages": 1 },
+      "shandong_zkly": { "enabled": true, "maxPages": 1 },
+      "guangdong_rsxx": { "enabled": true, "maxPages": 1 },
+      "sichuan_gsgg": { "enabled": true, "maxPages": 1 },
+      "shaanxi_tzgg": { "enabled": true, "maxPages": 1 },
+      "fujian_tzgg": { "enabled": true, "maxPages": 1 }
+    },
+    "push": { "enabled": true, "limit": 10 },
+    "directions": {
+      "supervision": { "strong": [], "weak": [] },
+      "construction": { "strong": [], "weak": [] }
+    },
+    "industryWords": [],
+    "excludeKeywords": [],
+    "minIndustryHits": 1,
+    "maxAgeDays": 180,
+    "keepUndated": true,
+    "fetch": { "timeoutMs": 20000, "retries": 2, "minDelayMs": 2000, "maxDelayMs": 5000, "concurrency": 2 },
+    "schedule": { "enabled": true, "runOnStart": true, "mode": "interval", "intervalHours": 24, "at": ["08:30"] },
+    "output": { "maxSnapshot": 2000, "keepRunLogs": 30, "logRetentionDays": 14, "csvBom": true }
+  },
   "price": {
     "enabled": true,
     "pushplusToken": "复用 pushplusToken 或独立填写",

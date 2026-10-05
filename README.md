@@ -89,6 +89,49 @@ node src/scheduler.js
 - 若某数据源改版导致解析失效，运行日志会显示「失败」，按需调整 `src/sources.js`
 - 推送选文按**源轮询**取篇（每源最多 `perSourceLimit` 篇），保证各源都有机会入选，总数不超过 `pushLimitPerRun`
 
+## 公众号文章下载到本地
+
+把公众号文章存成本地 Markdown + 本地图片，按公众号分目录：`<out>/<公众号>/<日期>-<标题>.md`。
+
+```bash
+# 方式一：RSS 全文（推荐，完全不用手动另存）
+npm run wechat-archive -- --rss 极客公园                    # 按公众号名，默认取最新 5 篇
+npm run wechat-archive -- --rss 量子位 --limit 3
+npm run wechat-archive -- --rss 极客公园 --dry-run           # 只看会归档哪些，不写盘
+npm run wechat-archive -- --list-feeds 极客                  # 查内置免费号名单（共 395 个）
+npm run wechat-archive -- --rss "https://wechat2rss.xlab.app/feed/xxx.xml"   # 任意 feed 地址
+
+# 方式二：本地保存的网页（RSS 覆盖不到的号用这个）
+npm run wechat-archive -- --html "C:\path\to\文章.html"
+npm run wechat-archive -- --html "C:\path\to\网页目录"      # 批量转换目录下所有 .html
+
+# 方式三：直接给链接（微信里「⋯ → 复制链接」得到的短链）
+npm run wechat-archive -- "https://mp.weixin.qq.com/s/xxxxx"
+npm run wechat-archive -- --in links.txt                    # 每行一条，# 为注释
+
+# 常用选项
+--out <目录>    输出目录，默认 data/wechat-archive
+--delay <毫秒>  两篇之间的间隔，默认 1500
+--limit <n>     --rss 每个 feed 取最新几篇，默认 5
+--force         忽略去重记录，重新归档
+--no-images     不下载图片，保留远程地址
+```
+
+- **想少花手工，用 `--rss`**：它不需要逐篇打开或另存，一次跑完一个号的最新 N 篇（含全文和图片），配合定时任务可完全无人值守。
+- 内置的是 [wechat2rss](https://wechat2rss.xlab.app/list/all) 免费号名单（395 个，`--list-feeds` 可搜）。名单外的号有两条路，产出的都是 RSS，用 `--rss <feed地址>` 直接可用：wechat2rss **私有部署**（付费，可订阅任意号），或自建 [wewe-rss](https://github.com/cooderl/wewe-rss)（免费，用微信读书账号扫码登录后订阅任意号）。
+- 名单外的号若只偶尔要看几篇，用不着折腾 RSS：在微信里「⋯ → 复制链接」把短链攒进 txt，`--in links.txt` 一次归档全文和图片。代价是逐篇复制。
+- `--rss` 和链接方式会把 `链接 -> 已归档文件` 记到 `<out>/.archive-state.json`，重复/定时跑只归档新文章；要重跑加 `--force`（不覆盖旧文件，会生成 `-2` 副本）。
+- RSS 正文在 `content:encoded`（`description` 只是几十字的摘要），其中图片和链接都带 wechat2rss 的代理前缀，工具会按 `u=` 参数还原成原始 `mmbiz.qpic.cn` / `mp.weixin.qq.com` 地址再处理。
+- 刷新内置名单：`node src/wechat-archive/refresh-feeds.js`
+- **微信按 URL 形式风控 `mp.weixin.qq.com`**：短链 `/s/xxxxx` 本机能直接取到全文和图片；长链 `?__biz=...` 只会拿到 `verify.js` 验证页（无 `js_content`），换 UA / 加 Referer / 无头浏览器均无效。微信里「⋯ → 复制链接」给的正是短链，所以「方式三」通常直接可用，是名单外公众号取全文最省事的办法。
+- 图片走 `mmbiz.qpic.cn`，**不走文章页风控**，三种方式都能正常下载；浏览器「另存为完整网页」产生的同名 `_files` 目录里的图片也会被一并收录到 `images/`。
+- 抓取逻辑复用用户级 skill `wechat-article-extractor`（含删除/迁移/已过期等失效页判断），可用环境变量 `WECHAT_SKILL_DIR` 指定其目录。
+- skill 对「另存网页」常判错（缺 `var ct` 报 1001、中文日期 `2026年5月10日 10:33` 算出 `Invalid Date`）时会自动退到本地结构解析，日志标注「兜底解析」。
+- 少量文章的正文由 JS 注入，原始 HTML 里没有 `#js_content`，此时自动用 Playwright 渲染后再解析（账号名等只在页内 JS 变量里的字段也会一并带出）。需先 `npm i -D playwright && npx playwright install chromium`；未安装会跳过并报错提示。
+- 只下载正文真正会渲染的图片：公众号头像卡片等无关 `<img>` 直接剔除，不产生无引用文件。
+- 下载按**文件头**校验格式（而非 URL 后缀），微信对图片返回 HTML 错误页时会被拒绝并保留远程地址，避免把 HTML 存成 `.jpg`。
+- `--html` 保存类型请用「网页，全部 (*.htm;*.html)」；误存成 `.mht` 会明确报错提示。
+
 ## 羊毛线报实时推送
 
 聚合白菜哦（商品好价）/ 专业线报 / 赚客吧 / 新赚吧 / 线报迷（论坛活动线报）共五类优惠信息，按订阅关键词过滤后推送微信。云端每 30 分钟运行一次，每条仅推送一次。
@@ -104,6 +147,28 @@ npm run wool:mock   # 模拟数据自检，不联网
 - 云端任务：`.github/workflows/wool-push.yml` 每 30 分钟运行，去重状态存 `data/wool-seen.json`，通过 actions/cache 跨次运行持久化
 - 时差与运行分析：每次真实推送把发布→推送时差写入 `data/wool-runs.jsonl`，`node src/wool/index.js --stats` 查看最近 30 次分布
 - 单个来源抓取失败只记日志，不影响其余来源推送
+
+## 水利行业招聘信息采集
+
+按岗位关键词定期抓取水利行业招聘信息（监理方向：水利工程监理/总监理工程师/监理资料员/监理测量…；施工方向：项目副经理/项目总工程师/施工资料员…），去重后以 JSONL + JSON + CSV + Markdown 落盘。
+
+```bash
+npm run jobs            # 采集一轮：抓取→关键词筛选→去重→落盘(data/jobs/)→微信推送新增
+npm run jobs:dry        # 只采集与打印，不写文件、不推送
+npm run jobs:mock       # 样例数据自检，不联网
+npm run jobs:stats      # 查看历史运行（各渠道抓取/命中/新增、耗时、失败标记）
+npm run jobs:schedule   # 常驻定时执行（间隔小时或每日固定时刻）
+npm run jobs:login -- <渠道>  # 需登录的渠道：弹出浏览器人工登录一次，保存会话供复用
+```
+
+- **实测可用渠道**：智联招聘（HTTP，含详情页权威发布时间）、前程无忧（浏览器渲染，含 jobTime 发布时间）、**工程监理人才网 job2299（HTTP，监理垂直站，`robots.txt` 允许抓取，列表页自带公司/地点/薪资/发布时间）**、**监理招聘网 jianlihr（HTTP，监理垂直站，关键词页 `/jobs/keys-{kw}.html`，列表自带薪资/发布日期/公司/地点）**、**水利英才网 waterhr（HTTP，水利垂直站，关键词搜索 `SearchResult.php?jtzw={kw}`，列表自带经验/学历/地点/薪资/更新时间）**、**中国水利人才网 rencai（HTTP，水利部官方平台的公开招聘公告）**、中国水利工程协会与江苏省水利厅公告（HTTP），以及 **6 个省级水利厅公告页：山东·招考录用、广东·人事信息（两栏均为事业单位公开招聘，实测命中率最高）、四川·公示公告、安徽/陕西/福建·通知公告（HTTP，省厅招聘公告，低频高价值兜底）**。**BOSS直聘与猎聘已实测定案关闭**：BOSS 会跳「安全验证」滑块页、登录页直接空白；猎聘则是双重拦截（首页/搜索页渲染约 2.5 秒后自毁 + 出口 IP 被标记进 `intercept/ip/captcha` 验证码通道，纯 HTTP 请求即被 302，**导入 Cookie 也无效**）。两者均属站点反自动化/IP 风控，本程序不绕过。**建筑英才网 buildhr 也已排除**：真实职位列表只在 `robots.txt` 明确禁止的 `/so/` 路径下，其余为 JS 空壳。**国聘 iguopin.com 亦不接入**：其职位列表接口强制要求 `Sign`/`T`/`Nonce` 请求签名头（裸调一律返回 `data:null`），直采需逆向签名算法，属本项目禁止的 token 逆向。另有 4 个省厅公告页未能接入：湖北（412 WAF）、云南（域名不可达）、浙江与湖南（栏目 JS 渲染）。会话导入通道（`jobs:login --cookie-file`）保留给未来新增的需登录渠道，详见 `docs/jobs-scraper.md` 第二节。
+- **关键词分层**：强词（水利监理/总监理工程师…）单独命中即收；弱词（监理/资料员/项目经理…）须与水利行业词同现，且排除平台多行业分类标签（如 `电力/水利/热力/燃气`），避免电力、市政岗位误收。回归自测 `node src/jobs/keywords.test.js`。
+- **有效期过滤**：默认只收发布时间在 **180 天（半年）内**的岗位（`jobs.maxAgeDays`，收紧到 3 个月填 `90`），过期岗位在运行摘要里记为 `过期(早于180天)`；自测 `node src/jobs/fresh.test.js`。
+- **登录态**：保存于 `data/jobs/auth/<渠道>.json`（含 Cookie，等同个人凭证，已被 gitignore；勿外传）；失效时日志会提示重新登录。程序不绕验证码、不伪造账号。
+- **稳定性**：请求重试+指数退避+随机 2–5s 间隔、按天日志（`data/jobs/logs/`，本地时间命名）、单渠道失败不影响整体、两级去重（岗位主键 + 单位/岗位/地点指纹）、页面结构变化容错。
+- 输出：`jobs.csv`（Excel 直开）、`jobs.md`（分组表格便于阅读）、`jobs.json`（最新快照）、`jobs.jsonl`（全量增量）。
+- **微信推送**：每轮把**新增**岗位汇总成一条消息推送到微信（复用 `pushplusToken`）。只推新增、不重推历史；单条最多列出 `jobs.push.limit`（默认 10，本机现为 12）条，超出部分只报总数，避免微信截断。`jobs.push.enabled: false` 或 `--no-push` 可关闭；`JOBS_PUSH_LIMIT` 可临时改条数。自测 `node src/jobs/notify.test.js`。
+- 新增渠道无需改代码，配置 `jobs.sites` 的 URL + 抽取规则即可，详见 `docs/jobs-scraper.md`。
 
 ## 依赖的 wewe-rss 服务
 
