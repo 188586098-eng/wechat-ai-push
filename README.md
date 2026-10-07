@@ -22,6 +22,30 @@
 | 机器之心 | http://localhost:4000/feeds/MP_WXS_3073282833.rss | wewe-rss 公众号 RSS |
 | 虎嗅 | http://localhost:4000/feeds/MP_WXS_1432156401.rss | wewe-rss 公众号 RSS |
 
+## 当前状态：全部定时任务已暂停（2026-10-07）
+
+账号下所有云端定时任务已于 2026-10-07 以 GitHub 原生开关手动禁用，**不再采集、不再推送**：
+
+| 仓库 | 工作流 | 原频率（北京时间） |
+|---|---|---|
+| ai-news-daily | ai-news-daily | 05:07 / 08:23 |
+| wechat-ai-push | AI 资讯日报定时推送 | 07:00 |
+| wechat-ai-push | 历史低位好价定时推送 | 09:00 / 21:00 |
+| wechat-ai-push | 羊毛线报实时推送 | 每 30 分钟 |
+| shuili-jianli-push | 水利监理周报 | 手动为主 |
+
+禁用只改 GitHub 侧的开关，**未改动任何 workflow 代码**，因此恢复不需要回滚代码。逐条执行以下命令即可全部还原：
+
+```bash
+gh workflow enable ai-news.yml     -R 188586098-eng/ai-news-daily
+gh workflow enable ai-news.yml     -R 188586098-eng/wechat-ai-push
+gh workflow enable price-deals.yml -R 188586098-eng/wechat-ai-push
+gh workflow enable wool-push.yml   -R 188586098-eng/wechat-ai-push
+gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
+```
+
+也可在网页操作：仓库 → **Actions** → 左侧选工作流 → 右侧 **Enable workflow**。
+
 ## 使用方法
 
 ### 1. 获取 pushplus token
