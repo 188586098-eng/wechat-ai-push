@@ -5,8 +5,9 @@
 //   node src/price/index.js --mock     # 用内置模拟数据跑通分析+推送链路（无需网络/授权）
 const fs = require('fs');
 const path = require('path');
-const auth = require('./auth');
-const { fetchTrend } = require('./adapter.manmanbuy');
+// 注意：./auth 与 ./adapter.manmanbuy 依赖 playwright（devDependency，需要浏览器）。
+// 它们改为按需 require，避免 `--deals`（纯 fetch，无需浏览器）在没有 node_modules
+// 的环境里因顶层 require('playwright') 直接 MODULE_NOT_FOUND 退出。
 const { analyze } = require('./analyze');
 const { sendReport } = require('./report');
 
@@ -83,6 +84,7 @@ async function runMock() {
 }
 
 async function run() {
+  const { fetchTrend } = require('./adapter.manmanbuy');
   const config = loadConfig();
   const products = config.products || [];
   if (!products.length) {
@@ -122,6 +124,7 @@ async function main() {
   const config = loadConfig();
   const products = config.products || [];
   if (args.includes('--auth')) {
+    const auth = require('./auth');
     const firstUrl = products.length ? products[0].url : null;
     if (!firstUrl) {
       console.error('[price] --auth 需要一个商品 URL 来触发授权页，请先在 config 配置 price.products。');
