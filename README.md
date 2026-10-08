@@ -24,7 +24,7 @@
 
 ## 当前状态：全部定时任务已暂停（2026-10-07）
 
-账号下所有云端定时任务已于 2026-10-07 以 GitHub 原生开关手动禁用，**不再采集、不再推送**：
+账号下所有云端定时任务已于 2026-10-07 以 GitHub 原生开关手动禁用，**不再采集、不再推送**。这些任务现改为**本机手动执行**，具体命令见下一节《本地运行手册》。
 
 | 仓库 | 工作流 | 原频率（北京时间） |
 |---|---|---|
@@ -44,7 +44,136 @@ gh workflow enable wool-push.yml   -R 188586098-eng/wechat-ai-push
 gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
 ```
 
-也可在网页操作：仓库 → **Actions** → 左侧选工作流 → 右侧 **Enable workflow**。
+也可在网页操作：仓库 → **Actions** → 左侧选工作流 → **Enable workflow**。
+
+## 本地运行手册（当前执行方式：本机手动）
+
+云端已停用，所有任务改为**本机手动执行**。本节面向"拿到仓库就能跑"的其他 Agent/同事：命令可直接复制，并标注了是否需要联网、**是否会真的推送微信**、前置条件与状态文件。
+
+### 0. 一次性准备
+
+- **Node ≥ 18**（代码使用全局 `fetch` 与 `AbortSignal.timeout`）
+- 安装依赖（**在仓库根目录执行**）：
+  ```bash
+  npm install                       # 必需（qrcode 等）
+  npx playwright install chromium   # 可选：仅"需要浏览器"的任务（见总览表）
+  ```
+- 配置：`cp config.example.json config.json`，填入 `pushplusToken`
+  - **AI 资讯日报**（含 `src/scheduler.js`）把 `config.json` 当**硬性依赖**，缺失会直接报错
+  - 其余任务在缺 `config.json` 时走内置默认值（好价任务此时需用环境变量 `DEAL_KEYWORDS` 指定关键词，否则静默跳过）
+- 推送 token 优先级：环境变量 `PUSHPLUS_TOKEN` > `config.json` 的 `pushplusToken`
+- ⚠️ **真实运行会推到接收人微信**。只想验证链路时，请用下表的「静默自检」命令。
+
+### 1. 任务总览
+
+| 任务 | 运行命令 | 联网 | 会推送 | 需 `config.json` | 需 playwright | 状态 / 产物 |
+|---|---|:--:|:--:|:--:|:--:|---|
+| AI 资讯日报（单次） | `npm start` | 是 | 有新增时 | **必须** | 否 | `data/sent.json` |
+| AI 日报常驻调度 | `node src/scheduler.js` | 是 | 到点自动 | **必须** | 否 | `data/lastrun.json` |
+| 羊毛线报 | `npm run wool` | 是 | 是 | 可选 | 否 | `data/wool-seen.json`、`data/wool-runs.jsonl` |
+| 好价·历史低位 | `npm run price:deals` | 是 | 是 | 可选 | 否 | `data/deals-seen.json` |
+| 价格监控（指定商品） | `npm run price` | 是 | 是 | 必须（`price.products`） | **是** | `data/price-cookies.json` |
+| 公众号文章归档 | `npm run wechat-archive -- <参数>` | 是 | 否 | 否 | 按需 | `<out>/.archive-state.json` |
+| 剪贴板归档（常驻） | `clipboard-watch.cmd` | 是 | 否 | 否 | 按需 | `data/clipboard-archive.log` |
+| 水利招聘采集 | `npm run jobs` | 是 | 新增时 | 可选 | 按需 | `data/jobs/` |
+| 招聘常驻调度 | `npm run jobs:schedule` | 是 | 新增时 | 可选 | 按需 | `data/jobs/` |
+| 晚间续期 | `renew-task.cmd` | 是 | 否 | **必须** | 否 | `data/renew.log` |
+
+> "需 playwright"指该路径会启动 Chromium；标"按需"的是只有个别分支用浏览器（未安装时该分支会报错并跳过，其余照常）。
+
+### 2. 静默自检（不推送、不打扰接收人）
+
+| 任务 | 安全自检命令 |
+|---|---|
+| 羊毛线报 | `npm run wool -- --dry-run`（离线自检用 `--mock`） |
+| 好价·历史低位 | `npm run price:deals -- --dry-run` |
+| 招聘采集 | `npm run jobs:dry` 或 `npm run jobs:mock` |
+| 公众号归档 | `npm run wechat-archive -- --rss 极客公园 --dry-run` |
+| 价格监控 | `npm run price:mock` ⚠️ **会真推一条测试消息** |
+
+### 3. 逐任务说明
+
+#### 3.1 好价·历史低位（`--deals`）
+
+按关键词在慢慢买爆料流里筛"历史低位"商品推送（卡片自动折算单件价、剔除"已结束"）。
+
+```bash
+npm run price:deals                              # 真实推送
+npm run price:deals -- --dry-run                 # 只抓取并打印报告，不发送
+DEAL_KEYWORDS="达利园 法式软面包,统一 麻辣青花椒" npm run price:deals   # 临时改监控词
+```
+- 关键词来源：环境变量 `DEAL_KEYWORDS`（逗号分隔）> `config.json` 的 `price.dealKeywords`；**两者都空则跳过、不推送**
+- 单次条数上限 `price.dealMaxItems`（默认回退 `price.dealTopN`）
+- 跨次去重：`data/deals-seen.json`（14 天 TTL）
+- **本任务纯 `fetch`，不依赖 playwright**（2026-10-07 修复过：此前顶层 `require('playwright')` 导致无 `node_modules` 环境启动即崩、云端 81 次全失败）
+
+#### 3.2 羊毛线报
+
+```bash
+npm run wool                # 真实推送
+npm run wool -- --dry-run   # 打印报告，不发送
+npm run wool -- --mock      # 离线模拟数据，走完整链路
+npm run wool -- --stats     # 查看最近 30 次"发布→推送"时差分布
+```
+- 关键词：`WOOL_KEYWORDS` > `config.wool.keywords` > 内置默认清单；排除词 `WOOL_EXCLUDE_KEYWORDS` / `config.wool.excludeKeywords`
+- 强弱词分层：强词命中 1 个即推；弱词需 ≥ `config.wool.minWeakHits`（默认 2）
+- 状态：`data/wool-seen.json`（去重）、`data/wool-runs.jsonl`（时差记录）
+
+#### 3.3 价格监控（指定商品历史价）
+
+```bash
+npm run price:auth          # 首次：打开浏览器扫码授权（京东商品需用慢慢买 App 扫码）
+npm run price               # 检查监控清单价格并推送
+npm run price:mock          # 用内置模拟数据跑通链路（会推测试消息）
+```
+- 监控清单：`config.json` 的 `price.products`（`name` / `url` / `targetPrice`）
+- 授权会话：`data/price-cookies.json`；**此任务需要 playwright + chromium**
+
+#### 3.4 水利招聘采集
+
+```bash
+npm run jobs                                       # 抓取→筛选→落盘→推送新增
+npm run jobs:dry                                    # 只采集与打印，不写文件、不推送
+npm run jobs:mock                                   # 样例数据自检，不联网
+npm run jobs:stats                                  # 查看历史运行
+npm run jobs -- --site=zhaopin                       # 只跑指定渠道
+npm run jobs -- --no-push                            # 落盘但不推送
+npm run jobs:login -- <渠道>                         # 需登录渠道：人工登录一次存会话
+npm run jobs:schedule                                # 常驻定时
+node src/jobs/scheduler.js --once                    # 定时器跑一轮即退出
+```
+- 产物：`data/jobs/` 下 `jobs.csv` / `jobs.md` / `jobs.json` / `jobs.jsonl`，日志 `data/jobs/logs/`
+- 浏览器渠道（前程无忧等）需要 playwright；纯 HTTP 渠道不需要
+
+#### 3.5 公众号文章归档 / 剪贴板
+
+```bash
+npm run wechat-archive -- --rss 极客公园 --limit 3   # 按号名取最新 N 篇
+npm run wechat-archive -- --list-feeds 极客          # 查内置号名单
+npm run wechat-archive -- "https://mp.weixin.qq.com/s/xxxxx"   # 微信「复制链接」短链
+clipboard-watch.cmd                                  # 常驻：复制链接即自动归档（需 PowerShell）
+```
+常用选项：`--out <目录>`、`--dry-run`、`--force`、`--no-images`，详见下文《公众号文章下载到本地》。
+
+#### 3.6 AI 资讯日报
+
+```bash
+npm start                    # 单次：抓取 11 源 → 只推新增 → 推送微信
+node src/scheduler.js        # 常驻：每 1 小时检查，距上次 ≥24 小时则自动跑
+```
+- **依赖 `config.json`**（顶层硬读）与本地 **wewe-rss**（`http://localhost:4000`，提供公众号 RSS 源）
+- 状态：`data/sent.json`（已推送去重）
+
+### 4. 排错速查
+
+| 现象 | 处理 |
+|---|---|
+| `Cannot find module 'playwright'` | 该任务需要浏览器：`npx playwright install chromium`；若不需浏览器（如 `--deals`），说明依赖被顶层加载了，应改用按需 `require` |
+| `Cannot find module 'qrcode'` | 未装依赖：在仓库根目录 `npm install` |
+| `Cannot find module './config.json'` / `ENOENT config.json` | 先 `cp config.example.json config.json` |
+| 好价/羊毛"0 条命中、不推送" | 检查关键词是否配置（`DEAL_KEYWORDS` / `WOOL_KEYWORDS`），以及 `data/*-seen.json` 是否已把条目去重掉 |
+| 抓取全部失败 | 目标站点风控或改版；单源失败只记日志，不影响其余源 |
+| `git push` 报 `schannel ... SSL/TLS connection failed` | 本机 git 配的代理（`http.proxy`）不通；临时绕过：`git -c http.proxy= push` |
 
 ## 使用方法
 

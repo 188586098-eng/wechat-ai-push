@@ -140,7 +140,9 @@ async function main() {
   if (args.includes('--deals')) {
     const { runDeals } = require('./deals');
     // 云端场景没有 config.json：token 与关键词从环境变量注入
-    const token = process.env.PUSHPLUS_TOKEN || config.pushplusToken;
+    // --dry-run：只抓取并打印报告、不发送，便于本地安全自检（不打扰接收人）
+    const dryRun = args.includes('--dry-run');
+    const token = dryRun ? '' : process.env.PUSHPLUS_TOKEN || config.pushplusToken;
     await runDeals(config, { token });
     return;
   }
