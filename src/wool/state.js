@@ -1,5 +1,5 @@
-// 已推送去重状态：保证每条线报只推送一次
-// 云端(GitHub Actions)通过 actions/cache 持久化 data/ 目录；本地直接读写文件。
+// 已列出去重状态：保证每条线报只被列/推一次（本地模式只列不推）
+// 状态文件供本地读写；云端(GitHub Actions)已停用，历史靠 actions/cache 持久化。
 const fs = require('fs');
 const path = require('path');
 
@@ -34,7 +34,7 @@ function prune(db) {
 /**
  * 过滤出未推送过的条目并登记
  * @param {Array<{id:string}>} items
- * @param {boolean} persist 是否登记落盘；dry-run/mock 传 false 只判断不登记，避免污染真实推送状态
+ * @param {boolean} persist 是否登记落盘；--dry-run/--mock 传 false 只判断不登记，避免污染真实去重状态
  * @returns {Array} 新条目（原顺序）
  */
 function filterNew(items, persist = true) {

@@ -70,7 +70,8 @@ gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
 |---|---|:--:|:--:|:--:|:--:|---|
 | AI 资讯日报（单次） | `npm start` | 是 | 有新增时 | **必须** | 否 | `data/sent.json` |
 | AI 日报常驻调度 | `node src/scheduler.js` | 是 | 到点自动 | **必须** | 否 | `data/lastrun.json` |
-| 羊毛线报 | `npm run wool` | 是 | 是 | 可选 | 否 | `data/wool-seen.json`、`data/wool-runs.jsonl` |
+| 羊毛线报（本地） | `npm run wool` | 是 | **否** | 可选 | 否 | `data/wool-seen.json`、`data/wool-runs.jsonl`、`data/wool-last-push.json` |
+| 羊毛线报（并推微信） | `npm run wool:push` | 是 | 是 | 可选 | 否 | 同上 |
 | 好价·历史低位 | `npm run price:deals` | 是 | 是 | 可选 | 否 | `data/deals-seen.json` |
 | 价格监控（指定商品） | `npm run price` | 是 | 是 | 必须（`price.products`） | **是** | `data/price-cookies.json` |
 | 公众号文章归档 | `npm run wechat-archive -- <参数>` | 是 | 否 | 否 | 按需 | `<out>/.archive-state.json` |
@@ -85,7 +86,7 @@ gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
 
 | 任务 | 安全自检命令 |
 |---|---|
-| 羊毛线报 | `npm run wool -- --dry-run`（离线自检用 `--mock`） |
+| 羊毛线报 | `npm run wool -- --dry-run`（纯预览；离线自检用 `--mock`）—— 注：默认本地模式本就不推微信 |
 | 好价·历史低位 | `npm run price:deals -- --dry-run` |
 | 招聘采集 | `npm run jobs:dry` 或 `npm run jobs:mock` |
 | 公众号归档 | `npm run wechat-archive -- --rss 极客公园 --dry-run` |
@@ -107,17 +108,21 @@ DEAL_KEYWORDS="达利园 法式软面包,统一 麻辣青花椒" npm run price:d
 - 跨次去重：`data/deals-seen.json`（14 天 TTL）
 - **本任务纯 `fetch`，不依赖 playwright**（2026-10-07 修复过：此前顶层 `require('playwright')` 导致无 `node_modules` 环境启动即崩、云端 81 次全失败）
 
-#### 3.2 羊毛线报
+#### 3.2 羊毛线报（本地手动，默认不推微信）
 
 ```bash
-npm run wool                # 真实推送
-npm run wool -- --dry-run   # 打印报告，不发送
-npm run wool -- --mock      # 离线模拟数据，走完整链路
-npm run wool -- --stats     # 查看最近 30 次"发布→推送"时差分布
+npm run wool                # 抓取→过滤→去重→写本地数据（不推微信）
+npm run wool:push           # 在上面基础上，额外推送微信
+npm run wool -- --dry-run   # 纯预览：不落盘、不登记去重、不推送
+npm run wool -- --mock      # 离线模拟数据，走完整链路（等价 --dry-run）
+npm run wool -- --stats     # 查看最近 30 次运行的时差分布
 ```
+- **默认本地模式**：结果写入 `data/wool-last-push.json`（本轮待看条目）与 `data/wool-runs.jsonl`（运行记录），供**总控中心 unified-panel** 的「🐑 羊毛线报」页展示；**不推微信**
+- 只有显式加 `--push` 才会推送微信（需 `pushplusToken` / `PUSHPLUS_TOKEN`）
+- 只显示**新增**：跨次去重保留，重复条目不重复列出（去重状态 7 天 TTL）
 - 关键词：`WOOL_KEYWORDS` > `config.wool.keywords` > 内置默认清单；排除词 `WOOL_EXCLUDE_KEYWORDS` / `config.wool.excludeKeywords`
 - 强弱词分层：强词命中 1 个即推；弱词需 ≥ `config.wool.minWeakHits`（默认 2）
-- 状态：`data/wool-seen.json`（去重）、`data/wool-runs.jsonl`（时差记录）
+- 状态：`data/wool-seen.json`（去重）、`data/wool-runs.jsonl`（运行记录）、`data/wool-last-push.json`（最近一轮结果）
 
 #### 3.3 价格监控（指定商品历史价）
 
@@ -171,7 +176,7 @@ node src/scheduler.js        # 常驻：每 1 小时检查，距上次 ≥24 小
 | `Cannot find module 'playwright'` | 该任务需要浏览器：`npx playwright install chromium`；若不需浏览器（如 `--deals`），说明依赖被顶层加载了，应改用按需 `require` |
 | `Cannot find module 'qrcode'` | 未装依赖：在仓库根目录 `npm install` |
 | `Cannot find module './config.json'` / `ENOENT config.json` | 先 `cp config.example.json config.json` |
-| 好价/羊毛"0 条命中、不推送" | 检查关键词是否配置（`DEAL_KEYWORDS` / `WOOL_KEYWORDS`），以及 `data/*-seen.json` 是否已把条目去重掉 |
+| 好价/羊毛"0 条命中" | 检查关键词是否配置（`DEAL_KEYWORDS` / `WOOL_KEYWORDS`），以及 `data/*-seen.json` 是否已把条目去重掉（羊毛只列新增，重复跑常为空） |
 | 抓取全部失败 | 目标站点风控或改版；单源失败只记日志，不影响其余源 |
 | `git push` 报 `schannel ... SSL/TLS connection failed` | 本机 git 配的代理（`http.proxy`）不通；临时绕过：`git -c http.proxy= push` |
 
@@ -285,21 +290,25 @@ npm run wechat-archive -- --in links.txt                    # 每行一条，# �
 - 下载按**文件头**校验格式（而非 URL 后缀），微信对图片返回 HTML 错误页时会被拒绝并保留远程地址，避免把 HTML 存成 `.jpg`。
 - `--html` 保存类型请用「网页，全部 (*.htm;*.html)」；误存成 `.mht` 会明确报错提示。
 
-## 羊毛线报实时推送
+## 羊毛线报（本地手动触发）
 
-聚合白菜哦（商品好价）/ 专业线报 / 赚客吧 / 新赚吧 / 线报迷（论坛活动线报）共五类优惠信息，按订阅关键词过滤后推送微信。云端每 30 分钟运行一次，每条仅推送一次。
+聚合白菜哦（商品好价）/ 专业线报 / 赚客吧 / 新赚吧 / 线报迷（论坛活动线报）共五类优惠信息，按订阅关键词过滤。
+
+**已改为本机手动执行：默认只抓取并写本地数据（供总控中心 unified-panel 展示），不推微信；**云端 `wool-push.yml` 已停用，且其 `run:` 未加 `--push`，即使被误启用也只抓取、不推送。
 
 ```bash
-npm run wool        # 手动运行（抓取→过滤→去重→推送）
+npm run wool        # 本地抓取（→ 写 data/wool-last-push.json，不推微信）
+npm run wool:push   # 抓取并推送微信
 npm run wool:mock   # 模拟数据自检，不联网
 ```
 
 - 关键词：环境变量 `WOOL_KEYWORDS`（逗号分隔）> `config.json` 的 `wool.keywords` > 内置默认清单；排除词同理（`WOOL_EXCLUDE_KEYWORDS` / `wool.excludeKeywords`）
 - **强弱词分层**：内置词分强词（快递/银行/话费/免单等主题，命中 1 个即推）与弱词（红包/会员/领券等泛词，仅命中需 ≥2 个，`wool.minWeakHits` 可调），抑制"标题含个红包就推"的低信息量推送
 - **热门槽**：未命中关键词但社区参与度高（回复/浏览多）的新帖也会优先推荐（每轮默认 ≤4 条，`wool.hotSlots` / `wool.hotMinScore` 可调），示例徽标「🔥热门·回N/浏N」
-- 云端任务：`.github/workflows/wool-push.yml` 每 30 分钟运行，去重状态存 `data/wool-seen.json`，通过 actions/cache 跨次运行持久化
-- 时差与运行分析：每次真实推送把发布→推送时差写入 `data/wool-runs.jsonl`，`node src/wool/index.js --stats` 查看最近 30 次分布
-- 单个来源抓取失败只记日志，不影响其余来源推送
+- **总控集成**：每轮运行把结果写 `data/wool-last-push.json`、运行记录追加 `data/wool-runs.jsonl`，总控中心（`C:\Users\18858\MonkeyCode\unified-panel`）的「🐑 羊毛线报」页据此展示，并可一键触发
+- **只列新增**：去重状态存 `data/wool-seen.json`（ 7 天 TTL），重复条目不重复列出
+- 时差与运行分析：每轮把发布→推送时差写入 `data/wool-runs.jsonl`，`node src/wool/index.js --stats` 查看最近 30 次分布
+- 单个来源抓取失败只记日志，不影响其余来源
 
 ## 水利行业招聘信息采集
 

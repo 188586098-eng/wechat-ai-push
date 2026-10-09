@@ -10,6 +10,37 @@ function fmtTime(item) {
   return item.timeText.replace(/\./g, '-');
 }
 
+/** 统一标题：本地落盘与微信推送共用，避免两处文案漂移 */
+function buildTitle(items) {
+  const dateStr = new Date().toLocaleDateString('zh-CN');
+  return `🐑 羊毛线报速递 ${dateStr}（${items.length} 条）`;
+}
+
+/**
+ * 纯文本报告：本地终端与总控中心日志阅读用（HTML 在控制台里不可读）
+ */
+function buildText(items) {
+  if (!items.length) return '（无新条目）';
+  const groups = new Map();
+  for (const it of items) {
+    if (!groups.has(it.source)) groups.set(it.source, []);
+    groups.get(it.source).push(it);
+  }
+  const sorted = [...groups.entries()].sort((a, b) => (SOURCE_ORDER[a[0]] ?? 9) - (SOURCE_ORDER[b[0]] ?? 9));
+  const lines = [];
+  for (const [source, list] of sorted) {
+    lines.push(`📡 ${list[0].sourceName || source}（${list.length} 条）`);
+    for (const it of list) {
+      lines.push(`  - ${it.hit ? `[${it.hit}] ` : ''}${it.title.slice(0, 70)}`);
+      const meta = [it.priceText, it.merchant, fmtTime(it)].filter(Boolean).join(' · ');
+      if (meta) lines.push(`      ${meta}`);
+      lines.push(`      ${it.url}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
 /** 按来源分组构建 HTML 报告 */
 function buildHtml(items) {
   const groups = new Map();
@@ -45,10 +76,9 @@ function buildHtml(items) {
 }
 
 async function send(token, items) {
-  const dateStr = new Date().toLocaleDateString('zh-CN');
-  const title = `🐑 羊毛线报速递 ${dateStr}（${items.length} 条）`;
+  const title = buildTitle(items);
   await push.send(token, title, buildHtml(items));
   return title;
 }
 
-module.exports = { buildHtml, send };
+module.exports = { buildHtml, buildText, buildTitle, send };

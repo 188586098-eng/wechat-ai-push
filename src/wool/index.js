@@ -1,8 +1,9 @@
-// 羊毛线报聚合推送入口
+// 羊毛线报聚合入口（本地手动执行；结果落盘供总控中心 unified-panel 展示）
 // 用法:
-//   node src/wool/index.js             # 抓取→关键词过滤→去重→推送到微信
-//   node src/wool/index.js --dry-run   # 不发送，打印报告
-//   node src/wool/index.js --mock      # 内置模拟数据跑通全链路（无网络）
+//   node src/wool/index.js             # 抓取→过滤→去重→写本地数据（不推微信）
+//   node src/wool/index.js --push      # 在上面基础上，额外推送微信
+//   node src/wool/index.js --dry-run   # 纯预览：不落盘、不登记去重、不推送
+//   node src/wool/index.js --mock      # 内置模拟数据跑通全链路（无网络，等价 --dry-run）
 //
 // 数据源: 白菜哦(全网好价/羊毛聚合) + 专业线报(zhuanyes.com) + 赚客吧(免费赠品/有奖活动等线报版块)
 // 关键词: env WOOL_KEYWORDS / WOOL_EXCLUDE_KEYWORDS > config.json wool 段 > 内置默认
@@ -14,7 +15,7 @@ const keywords = require('./keywords');
 const state = require('./state');
 const report = require('./report');
 
-/** 每次真实推送的条目明细落盘，供追溯“这条为什么推给我” */
+/** 每轮结果的条目明细落盘，供总控中心(unified-panel)展示“最近一轮羊毛” */
 function saveLastPush(title, items) {
   try {
     const file = path.join(__dirname, '..', '..', 'data', 'wool-last-push.json');
@@ -150,7 +151,10 @@ async function gatherXianbaomi(out, failures) {
 
 async function run() {
   const args = process.argv.slice(2);
-  const dryRun = args.includes('--dry-run') || args.includes('--mock');
+  // 本地化（2026-10）：默认只抓取+落盘，不推微信；--push 才推。
+  // preview（--dry-run/--mock）为纯预览：不落盘、不登记去重、不推送。
+  const preview = args.includes('--dry-run') || args.includes('--mock');
+  const wantPush = args.includes('--push');
   const token = resolveToken();
   const t0 = Date.now();
 
@@ -217,7 +221,7 @@ async function run() {
       prev.strongCount = Math.max(prev.strongCount || 0, it.strongCount || 0);
     }
   }
-  const kwUnseen = state.filterNew([...merged.values()], !dryRun);
+  const kwUnseen = state.filterNew([...merged.values()], !preview);
   const maxItems = (config.wool && config.wool.maxItems) || 20;
   const items = assignQuotas(kwUnseen, maxItems);
   seenFirst(all.length, matched.length, kwUnseen.length);
@@ -234,7 +238,7 @@ async function run() {
       ...it,
       hit: `🔥热门·回${it.replies ?? 0}/浏${it.views ?? 0}`,
     }));
-  const hotUnseen = state.filterNew(hotPool, !dryRun);
+  const hotUnseen = state.filterNew(hotPool, !preview);
   const taken = new Set(items.map((it) => it.id));
   const hotPicked = hotUnseen.filter((it) => !taken.has(it.id));
   items.push(...hotPicked);
@@ -243,7 +247,9 @@ async function run() {
   if (hotPicked.length) console.log(`[wool] 高热度推荐 ${hotPicked.length} 条（无关键词命中）: ${hotPicked.map((i) => i.title.slice(0, 18)).join(' | ')}`);
 
   if (!items.length) {
-    console.log('[wool] 本次没有新命中，不推送。');
+    console.log('[wool] 本次没有新命中。');
+    // 空跑也记一条运行记录，便于总控中心/`--stats` 看到“确实跑过”
+    if (!preview) appendRun({ pushed: 0, ages: [], bySource: {}, hot: 0, elapsedSec: Math.round((Date.now() - t0) / 1000), wechat: false });
     return { pushed: 0 };
   }
 
@@ -257,17 +263,30 @@ async function run() {
     console.log(`[wool] 推送 ${items.length} 条，发布→推送时差 最小${ages[0]}m 中位${med}m 最大${ages[ages.length - 1]}m`);
   }
 
-  if (dryRun || !token) {
-    console.log('\n[wool][dry-run] ' + (dryRun && token ? '--dry-run 模式，不发送。' : '未配置 token，打印报告:') + '\n');
-    console.log(report.buildHtml(items));
-    return { pushed: items.length };
+  if (preview) {
+    console.log('\n[wool][preview] 预览模式：不落盘、不登记去重、不推送。\n');
+    console.log(report.buildText(items));
+    return { pushed: items.length, preview: true };
   }
 
-  const title = await report.send(token, items);
+  // 本地落盘：总控中心读这两个文件展示「最近一轮结果」与运行记录
+  const title = report.buildTitle(items);
   saveLastPush(title, items);
-  appendRun({ pushed: items.length, ages, bySource: tallyBySource(items), hot: hotPicked.length, elapsedSec: Math.round((Date.now() - t0) / 1000) });
-  console.log(`[wool] 已推送 ${items.length} 条 → ${title}`);
-  return { pushed: items.length };
+
+  let pushedToWechat = false;
+  if (wantPush) {
+    if (!token) {
+      console.log('[wool] --push 已指定，但未配置 pushplusToken / PUSHPLUS_TOKEN，跳过微信推送。');
+    } else {
+      await report.send(token, items);
+      pushedToWechat = true;
+    }
+  }
+  appendRun({ pushed: items.length, ages, bySource: tallyBySource(items), hot: hotPicked.length, elapsedSec: Math.round((Date.now() - t0) / 1000), wechat: pushedToWechat });
+
+  console.log(`[wool] 本轮新命中 ${items.length} 条，已写入本地数据（总控中心可查看）。`);
+  console.log(pushedToWechat ? '[wool] 已推送微信。' : '[wool] 未推送微信（本地模式，如需推送加 --push）。');
+  return { pushed: items.length, wechat: pushedToWechat };
 }
 
 function tallyBySource(items) {
@@ -294,7 +313,7 @@ function printStats() {
   try {
     lines = fs.readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean).slice(-30);
   } catch {
-    console.log('[wool][stats] 暂无运行记录。请先真实推送若干次（node src/wool/index.js），本机与云端运行都会落盘 data/wool-runs.jsonl。');
+    console.log('[wool][stats] 暂无运行记录。请先本地运行若干次（node src/wool/index.js），每次运行都会落盘 data/wool-runs.jsonl。');
     return;
   }
   const rows = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
