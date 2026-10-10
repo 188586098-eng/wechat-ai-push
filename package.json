@@ -13,6 +13,8 @@
     "price:auth": "node src/price/index.js --auth",
     "price:mock": "node src/price/index.js --mock",
     "price:deals": "node src/price/index.js --deals",
+    "deals:local": "node src/deals-local/index.js",
+    "deals:local:push": "node src/deals-local/index.js --push",
     "wechat-archive": "node src/wechat-archive/index.js",
     "wechat-clipboard": "node src/wechat-clipboard.js",
     "jobs": "node src/jobs/index.js",

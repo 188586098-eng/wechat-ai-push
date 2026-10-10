@@ -72,6 +72,8 @@ gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
 | AI 日报常驻调度 | `node src/scheduler.js` | 是 | 到点自动 | **必须** | 否 | `data/lastrun.json` |
 | 羊毛线报（本地） | `npm run wool` | 是 | **否** | 可选 | 否 | `data/wool-seen.json`、`data/wool-runs.jsonl`、`data/wool-last-push.json` |
 | 羊毛线报（并推微信） | `npm run wool:push` | 是 | 是 | 可选 | 否 | 同上 |
+| 历史低价（本地采集） | `npm run deals:local` | 是 | **否** | 可选 | 单品需要 | `data/deals-local-last.json`、`data/deals-local-runs.jsonl` |
+| 历史低价（并推微信） | `npm run deals:local:push` | 是 | 是 | 可选 | 单品需要 | 同上 |
 | 好价·历史低位 | `npm run price:deals` | 是 | 是 | 可选 | 否 | `data/deals-seen.json` |
 | 价格监控（指定商品） | `npm run price` | 是 | 是 | 必须（`price.products`） | **是** | `data/price-cookies.json` |
 | 公众号文章归档 | `npm run wechat-archive -- <参数>` | 是 | 否 | 否 | 按需 | `<out>/.archive-state.json` |
@@ -88,6 +90,7 @@ gh workflow enable weekly.yml      -R 188586098-eng/shuili-jianli-push
 |---|---|
 | 羊毛线报 | `npm run wool -- --dry-run`（纯预览；离线自检用 `--mock`）—— 注：默认本地模式本就不推微信 |
 | 好价·历史低位 | `npm run price:deals -- --dry-run` |
+| 历史低价·本地采集 | `npm run deals:local -- --dry-run`（纯预览）或加 `--deals-only` 跳过需浏览器的单品 |
 | 招聘采集 | `npm run jobs:dry` 或 `npm run jobs:mock` |
 | 公众号归档 | `npm run wechat-archive -- --rss 极客公园 --dry-run` |
 | 价格监控 | `npm run price:mock` ⚠️ **会真推一条测试消息** |
@@ -168,6 +171,26 @@ node src/scheduler.js        # 常驻：每 1 小时检查，距上次 ≥24 小
 ```
 - **依赖 `config.json`**（顶层硬读）与本地 **wewe-rss**（`http://localhost:4000`，提供公众号 RSS 源）
 - 状态：`data/sent.json`（已推送去重）
+
+#### 3.7 历史低价·本地采集（总控中心集成）
+
+在**本机手动**采集“历史低价”，结果落盘供**总控中心 unified-panel** 的「🛒 历史低价」页浏览。**与云端 `--deals` 完全独立**：本模块只“读”复用云端的抓取/解析/决策代码，不改动云端任何文件，也不写云端的 `data/deals-seen.json`。
+
+```bash
+npm run deals:local                     # 抓取(爆料流+单品历史价) → 落盘，不推微信
+npm run deals:local:push                # 在上面基础上，额外推送微信
+npm run deals:local -- --dry-run        # 纯预览：不落盘、不推送
+npm run deals:local -- --deals-only     # 只跑爆料流（快，无需 playwright）
+npm run deals:local -- --products-only  # 只跑单品历史价（需 playwright）
+```
+
+采集两路：
+1. **爆料流·历史低位**：与 3.1 同源（慢慢买搜索爆料流），关键词 `DEAL_KEYWORDS` > `config.price.dealKeywords`；**两者都空则跳过该路**
+2. **单品历史价**：`config.price.products` 清单，走本地 playwright（先 `npm run price:auth` 授权后，京东商品也能查），输出现价 / 历史最低 / 60 日均价 / 购买建议
+
+- 默认**只落盘不推微信**；只有显式 `--push` 才推送
+- 产物：`data/deals-local-last.json`（最近一轮，含爆料与单品明细）、`data/deals-local-runs.jsonl`（运行记录）
+- 总控中心「🛒 历史低价」页有「立即采集一轮（不推微信）」与「采集并推送微信」两个按钮
 
 ### 4. 排错速查
 
