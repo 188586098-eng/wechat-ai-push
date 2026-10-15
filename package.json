@@ -18,6 +18,7 @@
     "wechat-archive": "node src/wechat-archive/index.js",
     "wechat-clipboard": "node src/wechat-clipboard.js",
     "jobs": "node src/jobs/index.js",
+    "jobs:local": "node src/jobs/index.js --no-push",
     "jobs:dry": "node src/jobs/index.js --dry-run",
     "jobs:mock": "node src/jobs/index.js --mock",
     "jobs:stats": "node src/jobs/index.js --stats",

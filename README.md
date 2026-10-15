@@ -339,6 +339,7 @@ npm run wool:mock   # 模拟数据自检，不联网
 
 ```bash
 npm run jobs            # 采集一轮：抓取→关键词筛选→去重→落盘(data/jobs/)→微信推送新增
+npm run jobs:local      # 采集一轮并落盘，但不推微信（总控中心「岗位信息」页的「本地采集一轮」走这条）
 npm run jobs:dry        # 只采集与打印，不写文件、不推送
 npm run jobs:mock       # 样例数据自检，不联网
 npm run jobs:stats      # 查看历史运行（各渠道抓取/命中/新增、耗时、失败标记）
