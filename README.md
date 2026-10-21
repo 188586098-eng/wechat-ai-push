@@ -326,6 +326,7 @@ npm run wool:mock   # 模拟数据自检，不联网
 ```
 
 - 关键词：环境变量 `WOOL_KEYWORDS`（逗号分隔）> `config.json` 的 `wool.keywords` > 内置默认清单；排除词同理（`WOOL_EXCLUDE_KEYWORDS` / `wool.excludeKeywords`）
+- **双十一关键词包（2026-10 新增）**：强词 `双十一 / 双11 / 百亿补贴 / 88VIP / 消费券 / 以旧换新 / plus会员`，弱词 `秒杀 / 满减 / 定金 / 尾款 / 预售 / 补贴 / 优惠券 / 折扣 / 券后 / 立减`（`国补` 原本已在强词中）。白菜哦搜索词同步加入前 7 个，见本地 `config.json` 的 `wool.baicaio.queries`；实测每个词各返回 20 条
 - **强弱词分层**：内置词分强词（快递/银行/话费/免单等主题，命中 1 个即推）与弱词（红包/会员/领券等泛词，仅命中需 ≥2 个，`wool.minWeakHits` 可调），抑制"标题含个红包就推"的低信息量推送
 - **热门槽**：未命中关键词但社区参与度高（回复/浏览多）的新帖也会优先推荐（每轮默认 ≤4 条，`wool.hotSlots` / `wool.hotMinScore` 可调），示例徽标「🔥热门·回N/浏N」
 - **总控集成**：每轮运行把结果写 `data/wool-last-push.json`、运行记录追加 `data/wool-runs.jsonl`，总控中心（`C:\Users\18858\MonkeyCode\unified-panel`）的「🐑 羊毛线报」页据此展示，并可一键触发
